@@ -17,3 +17,6 @@ venv/
 *.code-workspace
 *.swp
 testrun.txt
+tr2.txt
+*.compile.log
+
