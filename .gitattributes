@@ -1,0 +1,8 @@
+# Keep the repository LF. Windows checkouts are fine either way, but a mixed
+# history makes every diff unreadable.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ex5 binary
+*.ex4 binary

@@ -1,0 +1,14 @@
+{
+  "_comment": "opencode wiring. Merge into the project's opencode.json. The mcp block is the only part that matters.",
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "mt5": {
+      "type": "local",
+      "command": ["python", "-m", "mt5trader", "serve"],
+      "enabled": true,
+      "environment": {
+        "MT5_AUTONOMY": "propose"
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# state, journals and plans are per-machine and must never be committed
+state/
+journal/
+*.env
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# editors and shells
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+testrun.txt

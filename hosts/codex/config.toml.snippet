@@ -1,0 +1,29 @@
+# Append to ~/.codex/config.toml, or to a project's .codex/config.toml.
+#
+# The env block is the safety boundary. MT5_AUTONOMY lives here and not in the
+# config file on purpose: the model can edit a file, it cannot edit the
+# environment its own server process was launched with.
+#
+# start_propose first, read the verdicts for a while, then move to auto, then full.
+
+[mcp_servers.mt5]
+command = "python"
+args = ["-m", "mt5trader", "serve"]
+cwd = "C:/path/to/mt5-trader"
+startup_timeout_sec = 60
+tool_timeout_sec = 120
+
+[mcp_servers.mt5.env]
+MT5_AUTONOMY = "propose"
+# MT5_ALLOW_LIVE = "1"           # real accounts are read-only without this
+# MT5_ALLOW_KILL_RELEASE = "1"   # clearing the kill switch is a human decision
+# MT5_ALLOW_FLATTEN = "1"        # close positions this kernel does not own
+# MT5_MAGIC = "770001"
+# MT5_STATE_DIR = "C:/path/to/mt5-trader/state"
+# MT5_TERMINAL_PATH = "C:/Program Files/Broker MT5/terminal64.exe"
+# MT5_LOGIN = "12345678"
+# MT5_SERVER = "Broker-Demo"
+
+# For the GPT/Codex models that do better with a written contract than with tool
+# schemas alone, point the agent at hosts/AGENTS.md, or copy it into the project
+# as AGENTS.md. It carries the same workflow in prose.

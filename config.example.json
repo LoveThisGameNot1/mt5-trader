@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "Copy this to config.json next to the server entry point, or anywhere above it.",
+    "Every value here is a CEILING you are lowering, never a limit you are raising:",
+    "each number is clamped against HARD_CEILINGS in mt5trader/config.py at load time,",
+    "and the clamp is reported by 'python -m mt5trader config'.",
+    "Autonomy and the live-trading switch are NOT here on purpose. They are environment",
+    "variables, MT5_AUTONOMY and MT5_ALLOW_LIVE, set by whoever launches the server."
+  ],
+  "magic": 770001,
+  "symbols": ["EURUSD", "XAUUSD", "US30"],
+  "symbol_suffix": "",
+  "symbol_aliases": {
+    "GOLD": "XAUUSD",
+    "DOW": "US30"
+  },
+
+  "risk": {
+    "risk_per_trade_pct": 0.5,
+    "risk_per_trade_usd": null,
+    "total_risk_pct": 2.0,
+    "daily_loss_pct": 2.0,
+    "daily_loss_usd": null,
+    "max_drawdown_pct": 10.0,
+    "max_open_positions": 5,
+    "orders_per_day": 10,
+    "orders_per_minute": 3,
+    "max_lots_per_order": 2.0,
+    "loss_cooldown_seconds": 300,
+    "duplicate_window_seconds": 120
+  },
+
+  "execution": {
+    "deviation_points": 15,
+    "max_spread_points": 30,
+    "max_slippage_points": 20,
+    "filling": "auto",
+    "retries": 2,
+    "requote_pause_ms": 250,
+    "pending_expiry_minutes": 1440,
+    "close_retries": 3
+  },
+
+  "guards": {
+    "require_sl": true,
+    "require_tp": false,
+    "min_reward_risk": 1.0,
+    "min_stop_distance_points": 0,
+    "blocked_symbols": [],
+    "allowed_sides": ["buy", "sell"],
+    "blocked_server_hours": [23, 0],
+    "news_blackout": [
+      {
+        "start": "12:25",
+        "end": "12:45",
+        "label": "US data release, server time"
+      }
+    ],
+    "max_positions_per_symbol": 1,
+    "treat_stopless_as_full_risk": true
+  },
+
+  "journal": {
+    "dir": "journal"
+  }
+}

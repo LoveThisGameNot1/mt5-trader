@@ -1,0 +1,13 @@
+{
+  "_comment": "Claude Code project wiring. Copy to .mcp.json in the project root, or run: claude mcp add mt5 -- python -m mt5trader serve",
+  "mcpServers": {
+    "mt5": {
+      "command": "python",
+      "args": ["-m", "mt5trader", "serve"],
+      "cwd": "C:/path/to/mt5-trader",
+      "env": {
+        "MT5_AUTONOMY": "propose"
+      }
+    }
+  }
+}
