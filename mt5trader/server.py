@@ -21,9 +21,11 @@ closed, which is what makes the doctor skill possible.
 
 import json
 import sys
+import time
 import traceback
 
-from . import __version__, errors, history, instruments, orders, positions, records
+from . import __version__, correlation, cot, errors, history, instruments, levels, market
+from . import news, orders, positions, records, sessions
 from .bridge import Mt5Bridge, Mt5Error
 from .config import Settings, load_settings
 from .risk import BLOCK, PASS, RiskKernel
@@ -230,6 +232,84 @@ class Server:
             schema({"limit": dict(INT, description="default 100"),
                     "kind": dict(STR, description="filter by event kind")}),
             self.tool_journal)
+
+        self.add(
+            "mt5_levels",
+            "Structural levels for a symbol, computed from the terminal's own "
+            "history rather than from an opinion: last completed daily, 5-day, weekly "
+            "and monthly extremes, the weekly open, ATR bands, and the round numbers a "
+            "human reads off a chart. Each level comes back with its distance in "
+            "price, in points and in ATR, so 'support below' becomes a number. Levels "
+            "are labelled with the date of the bar they came from, because on a Monday "
+            "the newest completed daily bar belongs to Friday.",
+            schema({"symbol": dict(STR),
+                    "reach_atr": dict(NUM, description="how many ATRs away to still "
+                                                       "count as near, default 2.0"),
+                    "atr_period": dict(INT, description="default 14")}, ["symbol"]),
+            self.tool_levels)
+
+        self.add(
+            "mt5_session",
+            "When to trade, from the market's own behaviour: the average range the "
+            "symbol actually delivered at each server hour over the last weeks, the "
+            "named sessions mapped onto the broker's clock using the measured offset, "
+            "the current hour's share of a typical day, and the busiest and quietest "
+            "hours. A closed hour is reported as null, not as zero, because shut is "
+            "not the same as quiet.",
+            schema({"symbol": dict(STR),
+                    "days": dict(INT, description="default 20"),
+                    "timeframe": dict(STR, description="default H1")}, ["symbol"]),
+            self.tool_session)
+
+        self.add(
+            "mt5_correlation",
+            "Return correlation across symbols, and the clusters it exposes. The "
+            "kernel counts money at risk per position and cannot, by itself, see that "
+            "being long EURUSD and long GBPUSD is one trade with twice the size. "
+            "Correlation is measured on returns over the intersection of bar "
+            "timestamps, never on price levels, and never below a floor of "
+            "observations.",
+            schema({"symbols": dict(type="array", items=STR,
+                                    description="defaults to config.symbols"),
+                    "timeframe": dict(STR, description="default D1"),
+                    "count": dict(INT, description="bars, default 120"),
+                    "threshold": dict(NUM, description="cluster threshold, default 0.8")},
+                   []),
+            self.tool_correlation)
+
+        self.add(
+            "mt5_calendar",
+            "Upcoming scheduled economic releases, read from a JSON file that a small "
+            "MQL5 service writes inside the terminal. The Python API cannot reach the "
+            "terminal's calendar at all, which is why the service exists. The kernel "
+            "turns an event into a blackout window rather than handing the model a "
+            "headline to interpret: free text from outside, in the same context that "
+            "holds the order tools, is a prompt injection surface. Reports whether the "
+            "export is running and how old it is.",
+            schema({"hours": dict(INT, description="how far ahead, default 72"),
+                    "min_importance": dict(STR, description="high (default), moderate "
+                                                            "or low"),
+                    "currencies": dict(type="array", items=STR,
+                                       description="defaults to the config symbols' "
+                                                   "own currencies")},
+                   []),
+            self.tool_calendar)
+
+        self.add(
+            "mt5_cot",
+            "CFTC Commitments of Traders: what large speculators actually hold in the "
+            "currency, metal, energy and American index futures underneath the CFDs. "
+            "This is what exists in place of the 13F filings used for equities, which "
+            "have no currency equivalent and would be forty-five days stale anyway. "
+            "Reports net positioning, the weekly change and how crowded it is as a "
+            "percentile of the last few years. Read from a local file: run "
+            "tools/fetch_cot.py to refresh it, because the server itself makes no "
+            "network calls.",
+            schema({"symbols": dict(type="array", items=STR,
+                                    description="defaults to config.symbols"),
+                    "weeks": dict(INT, description="how much history to rank against")},
+                   []),
+            self.tool_cot)
 
         # ---- risk --------------------------------------------------------
         self.add(
@@ -675,6 +755,145 @@ class Server:
         limit = int(args.get("limit") or 100)
         return {"events": self.store.events(limit=limit, kind=args.get("kind")),
                 "journal_dir": str(self.store.journal_dir)}
+
+    # ------------------------------------------------------------------
+    # handlers: market structure and context
+    # ------------------------------------------------------------------
+    def _resolve_many(self, names):
+        out, failed = [], []
+        for name in names or []:
+            try:
+                instrument, _ = instruments.load(self.bridge, self.settings, name)
+                out.append(instrument)
+            except Exception as exc:  # noqa: BLE001 - one bad name must not lose the rest
+                failed.append({"symbol": name, "reason": str(exc)})
+        return out, failed
+
+    def _watchlist(self, args):
+        return args.get("symbols") or (self.settings.config.get("symbols") or [])
+
+    def tool_levels(self, args):
+        instrument, notes = instruments.load(self.bridge, self.settings, args["symbol"])
+        out = levels.compute(
+            self.bridge, instrument.symbol, instrument=instrument,
+            clock=self.kernel.clock(),
+            reach_atr=records.fnum(args.get("reach_atr"), levels.DEFAULT_REACH_ATR),
+            atr_period=records.inum(args.get("atr_period"), 14) or 14)
+        out["notes"] = notes
+        return out
+
+    def tool_session(self, args):
+        instrument, notes = instruments.load(self.bridge, self.settings, args["symbol"])
+        out = sessions.compute(
+            self.bridge, instrument.symbol, instrument=instrument,
+            clock=self.kernel.clock(),
+            days=records.inum(args.get("days"), sessions.DEFAULT_DAYS) or sessions.DEFAULT_DAYS,
+            timeframe=str(args.get("timeframe") or "H1").upper())
+        out["notes"] = notes
+        return out
+
+    def tool_correlation(self, args):
+        wanted = self._watchlist(args)
+        resolved, failed = self._resolve_many(wanted)
+        names = [i.symbol for i in resolved]
+        # Whatever is open is part of the picture whether it is on the watchlist or
+        # not, which is exactly the case the kernel cares about.
+        for position in self.kernel.positions():
+            symbol = str(records.get(position, "symbol"))
+            if symbol and symbol not in names:
+                names.append(symbol)
+        if len(names) < 2:
+            return {"__error__": True,
+                    "error": ("correlation needs at least two symbols. Give 'symbols', "
+                              "put a list in config.symbols, or have something open. "
+                              "Resolved: %s" % (names or "none")),
+                    "failed": failed}
+        out = correlation.matrix(
+            self.bridge, names,
+            timeframe=str(args.get("timeframe") or correlation.DEFAULT_TIMEFRAME).upper(),
+            count=records.inum(args.get("count"), correlation.DEFAULT_BARS) or correlation.DEFAULT_BARS,
+            threshold=records.fnum(args.get("threshold"), 0.8))
+        out["open_positions"] = [str(records.get(p, "symbol"))
+                                 for p in self.kernel.positions()]
+        out["failed"] = failed
+        return out
+
+    def tool_calendar(self, args):
+        clock = self.kernel.clock()
+        status = news.status(self.settings, self.bridge.call("terminal_info"), clock)
+        guard = str(self.settings.guards.get("calendar") or "warn").lower()
+        if not status.get("available"):
+            return {
+                "available": False,
+                "guard": guard,
+                "reason": status.get("reason"),
+                "path_checked": status.get("path"),
+                "how_to_fix": ("Install and start the calendar service: "
+                               "python tools/build_sidecar.py, then in MetaTrader "
+                               "View -> Navigator -> Services -> CalendarExport -> "
+                               "Start."),
+                "what_enforce_does": ("with guards.calendar=enforce a missing or stale "
+                                      "export blocks market orders, because an upcoming "
+                                      "release cannot be seen"),
+            }
+        events = status.get("events") or []
+        hours = records.inum(args.get("hours"), 72) or 72
+        importance = risk_importance(args.get("min_importance")
+                                     or self.settings.guards.get("calendar_min_importance"))
+        currencies = args.get("currencies")
+        if not currencies:
+            currencies = set()
+            for instrument in self._resolve_many(self._watchlist(args))[0]:
+                currencies |= news.currencies_for(instrument)
+        now_server = int(time.time() + clock.offset)
+        upcoming = news.within(events, now_server, hours, importance, currencies)
+        return {
+            "available": True,
+            "guard": guard,
+            "path": status.get("path"),
+            "source": status.get("source"),
+            "age_seconds": status.get("age_seconds"),
+            "stale": status.get("stale"),
+            "export_interval_minutes": status.get("export_interval_minutes"),
+            "terminal_build": status.get("terminal_build"),
+            "server_now": records.iso_time(now_server),
+            "window_hours": hours,
+            "min_importance": news.importance_name(importance),
+            "currencies": sorted(currencies),
+            "events_total_in_file": len(events),
+            "upcoming": upcoming,
+            "inside_window_now": news.active_blackout(
+                events, now_server,
+                before_minutes=records.inum(self.settings.guards.get("calendar_before_minutes"), 15),
+                after_minutes=records.inum(self.settings.guards.get("calendar_after_minutes"), 15),
+                min_importance=importance, currencies=currencies) or [],
+            "note": ("event times are server time, the same clock the terminal's own "
+                     "calendar tab shows"),
+        }
+
+    def tool_cot(self, args):
+        wanted = args.get("symbols") or (self.settings.config.get("symbols") or [])
+        resolved, failed = self._resolve_many(wanted)
+        by_symbol = {instrument.symbol: instrument for instrument in resolved}
+        names = [instrument.symbol for instrument in resolved]
+        out = cot.summary(self.settings, names, by_symbol)
+        out["failed"] = failed
+        if not out.get("available"):
+            out["how_to_fix"] = ("python tools/fetch_cot.py  (the only part of this "
+                                 "project that uses the network, and deliberately not "
+                                 "the server)")
+            return out
+        weeks = records.inum(args.get("weeks"), None)
+        if weeks:
+            data, error = cot.load(self.settings)
+            if data:
+                refreshed = []
+                for entry in out.get("reports") or []:
+                    again, _ = cot.report(data, entry["contract"], weeks=weeks)
+                    refreshed.append(dict(entry, **(again or {})))
+                out["reports"] = refreshed
+                out["ranked_over_weeks"] = weeks
+        return out
 
     # ------------------------------------------------------------------
     # handlers: risk

@@ -10,6 +10,11 @@ CFD and a crypto contract without a pip assumption anywhere. Every order passes 
 risk kernel that no tool can override, and autonomy is granted by the environment
 the server was launched in rather than by anything the model can do at runtime.
 
+On top of the execution core sit six read-side modules: structural levels, session
+statistics, return correlation, the terminal's economic calendar, CFTC positioning
+and the deal history. The calendar is a hard gate; the rest is context a human
+reads before deciding.
+
 ```
 you  ->  Claude Code / Codex / opencode  ->  MCP (stdio)  ->  mt5trader  ->  MetaTrader 5
                                                               |
@@ -65,6 +70,13 @@ git clone https://github.com/LoveThisGameNot1/mt5-trader.git
 cd mt5-trader
 python -m mt5trader selftest   # offline checks, no terminal needed
 python -m mt5trader doctor     # is the terminal reachable, is Algo Trading on
+```
+
+Two optional extras, both of which report what they found rather than assuming:
+
+```bash
+python tools/fetch_cot.py      # CFTC positioning, the only thing here that uses the network
+python tools/build_sidecar.py  # install + compile the calendar service into the terminal
 ```
 
 Then copy `config.example.json` to `config.json` and set your symbols and limits.
@@ -141,12 +153,30 @@ what the skill refuses to do.
 | `mt5-manage` | Stops, partials, break-even, trailing, flatten. One trailing step per call, so the rate limits stay meaningful. |
 | `mt5-guard` | The limits in force, the state of the day, the kill switch, unresolved intents, and how to go flat. |
 | `mt5-review` | What actually happened: round trips, win rate, profit factor, expectancy, drawdown, loss streaks, close reasons, the realised curve. |
+| `mt5-structure` | Where and when: period extremes, the weekly open, ATR bands and round numbers with their distance in ATR, plus the range the market actually delivered at each server hour. |
+| `mt5-correlation` | Whether several positions are one position, and what the cluster threshold does to a new order. |
+| `mt5-calendar` | Scheduled releases as blackout windows, the service that exports them, and what `enforce` does when the export stops. |
+| `mt5-cot` | What the large speculators hold in the futures underneath the CFDs, and whether that positioning is crowded. |
 | `mt5-autopilot` | The loop contract for unattended running: the pre-flight, the one-order-per-decision rule, when to trip the switch, when to stop entirely. |
 
 ## The tools
 
-25 tools: 15 that only read, 10 that change something. `python -m mt5trader tools`
+30 tools: 20 that only read, 10 that change something. `python -m mt5trader tools`
 lists them. Full reference with every argument: [docs/TOOLS.md](docs/TOOLS.md).
+
+## Where the read-side data comes from
+
+| input | source | age |
+| --- | --- | --- |
+| prices, bars, symbol metadata | the terminal, live | now |
+| structural levels, sessions, correlation | the terminal's own bar history | now |
+| economic calendar | the terminal's calendar, exported by an MQL5 service | up to 5 minutes |
+| CFTC positioning | `tools/fetch_cot.py` from cftc.gov | 3 days, by publication |
+| what already happened | MT5 deal history | now |
+
+Nothing is fetched while a trade decision is being made. The two file-based inputs
+are written by separate small programs on their own schedule, because a trade-path
+decision must not depend on a website being up.
 
 ## Safety
 
@@ -167,7 +197,7 @@ lists them. Full reference with every argument: [docs/TOOLS.md](docs/TOOLS.md).
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .   # 281 tests, offline, ~2s
+python -m unittest discover -s tests -t .   # 386 tests, offline, ~3s
 ```
 
 The suite needs no terminal, no Windows and no MetaTrader5 wheel. `fixtures.py`
@@ -181,8 +211,11 @@ symbol whose partial close strands a remainder under the minimum.
 
 * **Not financial advice.** Every limit here bounds how much you can lose, not
   whether the edge exists. A negative-expectancy strategy loses on schedule.
-* **Correlation is not counted.** Five positions across correlated pairs are one
-  trade; the kernel counts risk, not correlation.
+* **Correlation is not counted as a model, only as a tripwire.** Five positions
+  across correlated pairs are one trade, and `guards.correlation_limit` catches the
+  obvious case. It is measured over the recent window and it is not stable.
+* **COT data is three days old when it arrives.** It is published on a Friday for
+  the Tuesday before it. It measures crowding, not direction and not timing.
 * **Gap risk lands outside every limit.** A Sunday open or a news spike fills where
   it fills. A stop is a request.
 * **`FIFO`, close-by and exchange-execution accounts** are detected and reported
@@ -196,8 +229,10 @@ symbol whose partial close strands a remainder under the minimum.
 ## Layout
 
 ```
-mt5trader/      the kernel and the MCP server   (see docs/ARCHITECTURE.md)
-skills/         eight SKILL.md files
+mt5trader/      the kernel, the market readers and the MCP server
+mql5/           CalendarExport.mq5, the service the terminal runs
+tools/          fetch_cot.py, build_sidecar.py, render_docs.py
+skills/         twelve SKILL.md files
 hosts/          Claude, Codex and opencode wiring, plus AGENTS.md
 docs/           ARCHITECTURE.md, RISK.md, TOOLS.md
 tests/          the offline suite

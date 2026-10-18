@@ -187,6 +187,62 @@ locally. Pending orders skip the check: resting until the price arrives is
 exactly what a breakout order is for, and the closed session is when it belongs in
 the market.
 
+## Reading the market beyond the tick
+
+Six modules sit on top of the bar data, and they all go through
+`market.bars`, which drops the forming bar and returns plain dicts whatever shape
+the terminal handed back:
+
+| module | what it answers |
+| --- | --- |
+| `levels.py` | where the structure is: period extremes, the weekly open, ATR bands, round numbers, each with a distance in price, points and ATR |
+| `sessions.py` | when it moves: the range delivered per server hour, the named sessions mapped onto the broker's clock, the current hour's share of a typical day |
+| `correlation.py` | whether two positions are one position: return correlation over the intersection of timestamps, and the clusters it exposes |
+| `news.py` | what is scheduled: the terminal's economic calendar, read from JSON a service writes, turned into blackout windows |
+| `cot.py` | what the large speculators hold, and how crowded that is against the last few years |
+| `history.py` | what already happened, from the deal history |
+
+Two of them read files rather than the terminal, and that is deliberate: the
+calendar export and the COT report are written by separate small programs, so a
+trade-path decision never depends on a website being up. `tools/fetch_cot.py` is
+the only thing in the project that touches the network.
+
+## The calendar, and why there is an MQL5 file
+
+The `MetaTrader5` python package exposes no `calendar_*` function. Not a limited
+one: none. The terminal's economic calendar is reachable only from MQL5, so
+`mql5/CalendarExport.mq5` is a service that runs inside the terminal, reads
+`CalendarValueHistory`, and writes one JSON file on a timer. `tools/build_sidecar.py`
+finds the terminal's data folder (by asking the running terminal, not by guessing),
+copies the source there, drives `MetaEditor64.exe` headless, and reads the
+`Result: N errors` line out of the compile log rather than trusting the exit code,
+which is 1 even on a clean compile.
+
+The Python side turns an event into a *window*, never into text for the model to
+interpret. Free content from outside the process, landing in the same context that
+holds the order tools, is a prompt injection surface; a monitor that emits
+sentences is a monitor a model can argue with. A window cannot be argued with.
+
+The export carries both a normalised importance (0/1/2) and the terminal's raw
+enum value, because MQL5's `ENUM_CALENDAR_EVENT_IMPORTANCE` has four levels and a
+wrong assumption about that would otherwise be invisible.
+
+## Two bugs the fixtures had, and why they mattered
+
+Worth recording, because both were the *test* lying rather than the code failing:
+
+**An H1 bar was sixty hours long.** The fake decoded an MT5 timeframe code as
+minutes and then multiplied by sixty, so `H1` became `16385 minutes`. Every
+per-hour statistic was computed across a grid of sixty-hour buckets. The real
+encoding is: minutes as-is, hours as `n | 0x4000`, weeks as `1 | 0x8000`, months
+as `1 | 0xC000`.
+
+**Every symbol had the same straight line.** The fake generated one linear series
+for every symbol, so the correlation between any two of them was 1.0 and every
+correlation test would have been meaningless in the direction of passing. Each
+symbol now gets its own seeded walk, and `set_rates` overrides one when a test
+needs two series that really do move together.
+
 ## Layout
 
 ```
@@ -202,10 +258,18 @@ mt5trader/
   orders.py       request building, retries, reconciliation
   positions.py    SL/TP, partial close, break-even, trailing, flatten
   history.py      broker clock, realised PnL, statistics
+  market.py       bars, EMA/ATR/returns, correlation, timestamp alignment
+  levels.py       period extremes, weekly open, ATR bands, round numbers
+  sessions.py     per-server-hour range statistics and the named sessions
+  correlation.py  return correlation and clusters
+  news.py         the economic calendar as blackout windows
+  cot.py          CFTC positioning, crowding percentiles
   server.py       the MCP stdio server and the tool registry
   cli.py          doctor / config / tools / selftest / serve
-  fixtures.py     four instrument types and a stand-in terminal, for tests
-tests/            281 tests, offline, no terminal
+  fixtures.py     instrument types and a stand-in terminal, for tests
+mql5/             CalendarExport.mq5, the calendar service the terminal runs
+tools/            fetch_cot.py, build_sidecar.py, render_docs.py
+tests/            386 tests, offline, no terminal
 ```
 
 ## Testing

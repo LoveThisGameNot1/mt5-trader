@@ -42,6 +42,8 @@ def build(root, env=None, symbols=None, account=None, terminal=None, positions=N
     if config is not None:
         import json
         (root / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    from mt5trader import market
+    market.clear_cache()   # bar series are cached per process; tests must not share
     settings = Settings(root=str(root), config_path=None, environ=dict(env or {}))
     fake = FakeMt5(symbols=symbols, account=account, terminal=terminal,
                    positions=positions, orders=orders, deals=deals)

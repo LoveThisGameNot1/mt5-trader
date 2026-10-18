@@ -22,6 +22,7 @@ get exercised without a broker.
 import copy
 import datetime
 import time
+import zlib
 
 
 def make_symbol(name, **overrides):
@@ -245,6 +246,24 @@ def make_position(ticket, symbol, side, volume, price_open, magic, sl=0.0, tp=0.
     }
 
 
+def bar_seconds(timeframe):
+    """Seconds per bar from an MT5 timeframe code.
+
+    The code is not a duration: minutes are stored as they are, hours as
+    ``n | 0x4000``, weeks as ``n | 0x8000`` and months as ``n | 0xC000``. Treating
+    the code as minutes and then converting to seconds makes an H1 bar sixty hours
+    long, which quietly turns every per-hour statistic into nonsense.
+    """
+    code = int(timeframe)
+    if code >= 0xC000:
+        return 30 * 86400
+    if code >= 0x8000:
+        return 7 * 86400
+    if code >= 0x4000:
+        return (code & 0x3FFF) * 3600
+    return code * 60
+
+
 class FakeMt5:
     """A stand-in for the MetaTrader5 module.
 
@@ -271,6 +290,7 @@ class FakeMt5:
         self.script_send = []
         self.script_check = None
         self.sent = []
+        self.rates = {}
         self.initialized = False
         self.trade_allowed = True
         self._last_error = (1, "Success")
@@ -340,30 +360,62 @@ class FakeMt5:
         to dir() and getattr(). That shape is covered by the records tests rather
         than by this fake; what matters here is that the tool path produces bars
         with a close price.
+
+        Each symbol gets its own seeded random walk rather than the same straight
+        line, because a straight line every symbol shares makes every correlation
+        1.0 and every correlation test meaningless. ``set_rates`` overrides a
+        symbol when a test needs two series that really do move together.
         """
         found = self.symbols.get(symbol)
         if found is None:
             return None
-        base = found.get("bid") or 100.0
-        step_seconds = int(timeframe) if int(timeframe) < 10000 else 3600
+        count = int(count)
+        step_seconds = bar_seconds(timeframe)
         spot = int(self._tick_time or time.time())
         spread_points = 1
         if found.get("ask") and found.get("point"):
             spread_points = int(round((found["ask"] - found["bid"]) / found["point"]))
+        injected = self.rates.get(symbol)
+        if injected is not None:
+            closes = injected[-count:]
+            if not closes:
+                return []       # an injected empty series means "no history"
+            # An injected series can be shorter than what was asked for. Returning
+            # fewer bars is the honest analogue of "the history ran out", and it is
+            # what the caller's length check is for.
+            count = len(closes)
+            base = closes[0]
+            walk = [c - closes[0] for c in closes]
+        else:
+            base = found.get("bid") or 100.0
+            state = (zlib.crc32(str(symbol).encode()) or 7) % (2 ** 31)
+            walk = []
+            price = 0.0
+            for _ in range(count):
+                state = (1103515245 * state + 12345) % (2 ** 31)
+                price += ((state / float(2 ** 31)) - 0.5) * base * 0.004
+                walk.append(price)
         out = []
-        for index in range(int(count)):
-            close = base + (index - int(count)) * base * 0.0001
+        for index in range(count):
+            close = base + walk[index]
             out.append({
-                "time": spot - (int(count) - index) * step_seconds * 60,
-                "open": close - 0.1,
-                "high": close + 0.5,
-                "low": close - 0.5,
+                "time": spot - (count - index) * step_seconds,
+                "open": close - close * 0.0002,
+                "high": close + abs(walk[index] - walk[index - 1] if index else 0) * 0.5
+                        + close * 0.0005,
+                "low": close - abs(walk[index] - walk[index - 1] if index else 0) * 0.5
+                       - close * 0.0005,
                 "close": close,
                 "tick_volume": 100 + index,
                 "spread": spread_points,
                 "real_volume": 0,
             })
         return out
+
+    def set_rates(self, symbol, closes):
+        """Give a symbol an exact close series, for correlation and level tests."""
+        self.rates[symbol] = [float(c) for c in closes]
+        return self.rates[symbol]
 
     def copy_rates_range(self, symbol, timeframe, date_from, date_to):
         return self.copy_rates_from_pos(symbol, timeframe, 0, 50)

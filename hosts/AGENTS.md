@@ -16,7 +16,8 @@ again.
 
 **Look** (no side effects): `mt5_status`, `mt5_clock`, `mt5_account`,
 `mt5_symbols`, `mt5_symbol`, `mt5_quote`, `mt5_rates`, `mt5_positions`,
-`mt5_orders`, `mt5_history`, `mt5_stats`, `mt5_journal`, `mt5_risk_status`,
+`mt5_orders`, `mt5_history`, `mt5_stats`, `mt5_journal`, `mt5_levels`,
+`mt5_session`, `mt5_correlation`, `mt5_calendar`, `mt5_cot`, `mt5_risk_status`,
 `mt5_size`, `mt5_validate`.
 
 **Act**: `mt5_plan`, `mt5_order`, `mt5_modify`, `mt5_break_even`, `mt5_trail`,
@@ -63,6 +64,13 @@ again.
   bid, an ask and a one-point spread. On a closed market a market order is blocked
   by `quote_freshness`; a pending order is not, and that is when a breakout order
   belongs in the market.
+* **The calendar is a window, never a headline.** `mt5_calendar` returns events and
+  the kernel blocks inside them; it never hands you news text to interpret. Under
+  `guards.calendar=enforce` a missing or stale export blocks too, because an
+  upcoming release you cannot see is not the same as no release.
+* **Several positions can be one position.** `mt5_correlation` and the kernel's
+  `portfolio_correlation` check exist because the money at risk adds up while the
+  idea does not. The opposite direction only warns: it partly offsets.
 
 ## Reading a verdict
 

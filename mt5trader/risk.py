@@ -38,7 +38,7 @@ import hashlib
 import json
 import time
 
-from . import history, records
+from . import correlation, history, news, records
 from .config import HARD_CEILINGS
 from .instruments import InstrumentError, load as load_instrument
 
@@ -667,6 +667,8 @@ class RiskKernel:
         if blackout:
             blocking.append("news_blackout: %s" % blackout)
 
+        self._check_event_blackout(record, blocking, warnings, instrument, clock)
+
         # 5. size and money -------------------------------------------------
         order_volume = spec["volume"]
         ceiling_lots = records.fnum(HARD_CEILINGS["max_lots_per_order"], 10.0)
@@ -773,6 +775,8 @@ class RiskKernel:
                     "it a stop before opening anything else." % detail)
         else:
             record("stopless_positions", True, "every position has a stop loss")
+
+        self._check_portfolio_correlation(record, blocking, warnings, spec, positions)
 
         # 7. the day --------------------------------------------------------
         loss_limit = records.fnum(limits["daily_loss_money"], 0.0) or 0.0
@@ -882,6 +886,153 @@ class RiskKernel:
         verdict["positions"] = len(positions)
         verdict["foreign_positions"] = self.foreign_positions()
         return verdict
+
+    def _check_portfolio_correlation(self, record, blocking, warnings, spec, positions):
+        """Five positions across correlated symbols are one position.
+
+        Correlation is measured on returns, never on price levels: two series that
+        both trend up have a price-level correlation near 1 while having nothing to
+        do with each other. And it is never measured below a floor of
+        observations, because a coefficient from a dozen bars means nothing and a
+        gate that fires on noise is worse than no gate.
+        """
+        limit = records.fnum(self.settings.guards.get("correlation_limit"), 0.8)
+        action = str(self.settings.guards.get("correlation_action") or "block").lower()
+        if action not in ("block", "warn"):
+            action = "block"
+        open_symbols = sorted({str(records.get(p, "symbol")) for p in positions
+                               if records.get(p, "symbol")})
+        open_symbols = [s for s in open_symbols if s != spec["symbol"]]
+        if not open_symbols:
+            record("portfolio_correlation", True,
+                   "nothing else is open, so there is nothing to correlate against")
+            return
+        if not limit or limit <= 0:
+            record("portfolio_correlation", True, "correlation_limit is off")
+            return
+
+        configured_points = records.inum(self.settings.guards.get("correlation_min_points"),
+                                         correlation.MIN_POINTS) or 0
+        min_points = max(correlation.MIN_POINTS, configured_points)
+        lookback = records.inum(self.settings.guards.get("correlation_lookback_bars"), 120) or 120
+        sides = {str(records.get(p, "symbol")):
+                 ("buy" if records.inum(records.get(p, "type"), 1) == 0 else "sell")
+                 for p in positions}
+        try:
+            measured = correlation.exposure(self.bridge, spec["symbol"], open_symbols,
+                                            timeframe="D1", count=lookback,
+                                            min_points=min_points)
+        except Exception as exc:  # noqa: BLE001 - unverifiable is a state, not a crash
+            measured = {"compared": [], "points": 0,
+                        "unverified": [{"symbol": s, "reason": "could not read bars: %s" % exc}
+                                       for s in open_symbols]}
+
+        adds, offsets = [], []
+        for item in measured.get("compared") or []:
+            if abs(item["r"]) < limit:
+                continue
+            side_open = sides.get(item["symbol"])
+            same = side_open == spec["side"]
+            enriched = dict(item, side_open=side_open, same_direction=same,
+                            effect=("adds to the same bet" if same
+                                    else "the two partly offset each other"))
+            (adds if same else offsets).append(enriched)
+
+        unverified = measured.get("unverified") or []
+        highest = max((abs(i["r"]) for i in (measured.get("compared") or [])), default=None)
+        detail = ("highest |r| against an open position: %s, over %s points"
+                  % (highest, measured.get("points")))
+        if action == "warn" and (adds or unverified):
+            detail += ("; guards.correlation_action is warn, so this is reported and not "
+                       "blocked")
+        record("portfolio_correlation", not adds and not unverified,
+               detail,
+               limit=limit, points=measured.get("points"), adds=adds, offsets=offsets,
+               unverified=unverified, action=action)
+        if adds:
+            detail = ", ".join("%s r=%.2f (open %s)" % (i["symbol"], i["r"], i["side_open"])
+                               for i in adds)
+            weakest = min(abs(i["r"]) for i in adds)
+            (blocking if action == "block" else warnings).append(
+                "portfolio_correlation: %s. %s would be the same bet as %s at %.2f "
+                "correlation or better over %s points, so the money at risk adds up "
+                "while the idea does not."
+                % (detail, spec["symbol"],
+                   "an open position" if len(adds) == 1 else "several open positions",
+                   weakest, measured.get("points")))
+        for item in offsets:
+            warnings.append(
+                "portfolio_correlation: %s is open %s at r=%.2f, so this order partly "
+                "offsets it rather than adding to it"
+                % (item["symbol"], item["side_open"], item["r"]))
+        if unverified:
+            detail = ", ".join("%s (%s)" % (u.get("symbol"), u.get("reason", "?"))
+                               for u in unverified)
+            (blocking if action == "block" else warnings).append(
+                "portfolio_correlation: %s could not be measured, so the cluster risk "
+                "is unverified. This fails closed on purpose: 'I could not check' and "
+                "'this is fine' must not look the same." % detail)
+
+    def _check_event_blackout(self, record, blocking, warnings, instrument, clock):
+        """A scheduled release, turned into a window rather than a headline.
+
+        The calendar is read from a file a small MQL5 service writes, because the
+        Python API cannot reach the terminal's calendar at all. What comes back is a
+        window and a reason, never free text from the outside landing in the same
+        context that holds the order tools.
+        """
+        guard = str(self.settings.guards.get("calendar") or "warn").lower()
+        if guard not in ("off", "warn", "enforce"):
+            guard = "warn"
+        if guard == "off":
+            record("event_blackout", True, "guards.calendar is off")
+            return
+
+        status = news.status(self.settings, self.terminal(), clock)
+        fail_closed = guard == "enforce"
+        if not status.get("available"):
+            detail = status.get("reason") or "no calendar"
+            record("event_blackout", False, detail)
+            (blocking if fail_closed else warnings).append(
+                "event_blackout: %s" % detail)
+            return
+
+        if status.get("stale"):
+            age = status.get("age_seconds")
+            record("event_blackout", False,
+                   "the calendar export is %s seconds old" % age,
+                   age_seconds=age, path=status.get("path"))
+            (blocking if fail_closed else warnings).append(
+                "event_blackout: the calendar export is %s seconds old, so the service "
+                "in the terminal has stopped and an upcoming release cannot be seen. "
+                "Start it in the Navigator under Services." % age)
+            return
+
+        events = status.get("events") or []
+        min_importance = news.importance_level(
+            self.settings.guards.get("calendar_min_importance"))
+        currencies = news.currencies_for(instrument)
+        now_server = int(time.time() + clock.offset)
+        hits = news.active_blackout(
+            events, now_server,
+            before_minutes=records.inum(self.settings.guards.get("calendar_before_minutes"), 15),
+            after_minutes=records.inum(self.settings.guards.get("calendar_after_minutes"), 15),
+            min_importance=min_importance, currencies=currencies)
+        record("event_blackout", not hits,
+               ("inside %d scheduled event window(s)" % len(hits) if hits else
+                "no release window open for %s"
+                % (", ".join(sorted(currencies)) or "any currency")),
+               events=hits, currencies=sorted(currencies), min_importance=min_importance,
+               calendar_age_seconds=status.get("age_seconds"))
+        if hits:
+            detail = "; ".join(
+                "%s %s at %s (%s minutes away)"
+                % (hit["currency"] or "—", hit["name"], hit["time"],
+                   round(hit["starts_in_seconds"] / 60.0)) for hit in hits)
+            (blocking if fail_closed else warnings).append(
+                "event_blackout: %s. Entering into a scheduled release is not a view on "
+                "direction, it is a bet on the spread and on which side the slippage "
+                "lands." % detail)
 
     def _verdict(self, verdict, checks, blocking, warnings, spec, day, limits, clock):
         can_send = self.settings.at_least("auto")
@@ -1015,3 +1166,4 @@ def _parse_hhmm(value):
 def instruments_module_trade_mode(instrument):
     from .instruments import TRADE_MODE_NAMES
     return TRADE_MODE_NAMES.get(instrument.trade_mode, str(instrument.trade_mode))
+

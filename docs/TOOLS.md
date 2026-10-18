@@ -9,7 +9,7 @@ every one of them runs the risk kernel first or refuses to act on a position tha
 carries another magic number.
 
 
-25 tools: 15 read, 10 write.
+30 tools: 20 read, 10 write.
 
 
 ## Read
@@ -163,6 +163,86 @@ The kernel's own audit trail: intents, sends, rejections, ambiguous results, rec
 | `limit` | int |  | default 100 |
 
 | `kind` | string |  | filter by event kind |
+
+
+### `mt5_levels`
+
+Structural levels for a symbol, computed from the terminal's own history rather than from an opinion: last completed daily, 5-day, weekly and monthly extremes, the weekly open, ATR bands, and the round numbers a human reads off a chart. Each level comes back with its distance in price, in points and in ATR, so 'support below' becomes a number. Levels are labelled with the date of the bar they came from, because on a Monday the newest completed daily bar belongs to Friday.
+
+
+| argument | type | required | meaning |
+
+| --- | --- | --- | --- |
+
+| `symbol` | string | yes |  |
+
+| `reach_atr` | number |  | how many ATRs away to still count as near, default 2.0 |
+
+| `atr_period` | int |  | default 14 |
+
+
+### `mt5_session`
+
+When to trade, from the market's own behaviour: the average range the symbol actually delivered at each server hour over the last weeks, the named sessions mapped onto the broker's clock using the measured offset, the current hour's share of a typical day, and the busiest and quietest hours. A closed hour is reported as null, not as zero, because shut is not the same as quiet.
+
+
+| argument | type | required | meaning |
+
+| --- | --- | --- | --- |
+
+| `symbol` | string | yes |  |
+
+| `days` | int |  | default 20 |
+
+| `timeframe` | string |  | default H1 |
+
+
+### `mt5_correlation`
+
+Return correlation across symbols, and the clusters it exposes. The kernel counts money at risk per position and cannot, by itself, see that being long EURUSD and long GBPUSD is one trade with twice the size. Correlation is measured on returns over the intersection of bar timestamps, never on price levels, and never below a floor of observations.
+
+
+| argument | type | required | meaning |
+
+| --- | --- | --- | --- |
+
+| `symbols` | string[] |  | defaults to config.symbols |
+
+| `timeframe` | string |  | default D1 |
+
+| `count` | int |  | bars, default 120 |
+
+| `threshold` | number |  | cluster threshold, default 0.8 |
+
+
+### `mt5_calendar`
+
+Upcoming scheduled economic releases, read from a JSON file that a small MQL5 service writes inside the terminal. The Python API cannot reach the terminal's calendar at all, which is why the service exists. The kernel turns an event into a blackout window rather than handing the model a headline to interpret: free text from outside, in the same context that holds the order tools, is a prompt injection surface. Reports whether the export is running and how old it is.
+
+
+| argument | type | required | meaning |
+
+| --- | --- | --- | --- |
+
+| `hours` | int |  | how far ahead, default 72 |
+
+| `min_importance` | string |  | high (default), moderate or low |
+
+| `currencies` | string[] |  | defaults to the config symbols' own currencies |
+
+
+### `mt5_cot`
+
+CFTC Commitments of Traders: what large speculators actually hold in the currency, metal, energy and American index futures underneath the CFDs. This is what exists in place of the 13F filings used for equities, which have no currency equivalent and would be forty-five days stale anyway. Reports net positioning, the weekly change and how crowded it is as a percentile of the last few years. Read from a local file: run tools/fetch_cot.py to refresh it, because the server itself makes no network calls.
+
+
+| argument | type | required | meaning |
+
+| --- | --- | --- | --- |
+
+| `symbols` | string[] |  | defaults to config.symbols |
+
+| `weeks` | int |  | how much history to rank against |
 
 
 ### `mt5_risk_status`

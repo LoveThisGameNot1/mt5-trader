@@ -1,0 +1,144 @@
+C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\records.py:166: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  return datetime.datetime.utcfromtimestamp(int(epoch)).isoformat() + "Z"
+.....F..E..C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\sessions.py:67: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  moment = datetime.datetime.utcfromtimestamp(row["time"])
+C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\history.py:138: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+  return datetime.datetime.utcfromtimestamp(time.time() + self.offset)
+..F.E.F.....FF.C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\history.py:142: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  return datetime.datetime.utcnow()
+..E.F.FF.F..................
+======================================================================
+ERROR: test_the_label_is_a_date_not_a_word (tests.test_levels.Levels.test_the_label_is_a_date_not_a_word)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_levels.py", line 53, in test_the_label_is_a_date_not_a_word
+    self.assertRegex(entry["date"], r"^\d{4}-\d{2}-\d{2}")
+                     ~~~~~^^^^^^^^
+KeyError: 'date'
+
+======================================================================
+ERROR: test_no_bars_is_reported_honestly (tests.test_sessions.Sessions.test_no_bars_is_reported_honestly)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_sessions.py", line 79, in test_no_bars_is_reported_honestly
+    out = sessions.compute(self.h.bridge, "EURUSD", instrument=self.instrument,
+                           clock=self.h.kernel.clock())
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\sessions.py", line 57, in compute
+    rows = market.bars(bridge, symbol, timeframe, min(needed, 5000), use_cache=True)
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\market.py", line 93, in bars
+    raw = bridge.call("copy_rates_from_pos", symbol, code, 0, want)
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\bridge.py", line 228, in call
+    return self._dispatch(work, (), {})
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\bridge.py", line 118, in _dispatch
+    raise job.error
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\bridge.py", line 103, in _worker
+    job.result = job.fn(*job.args, **job.kwargs)
+                 ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\bridge.py", line 224, in work
+    result = fn(*args, **kwargs)
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\mt5trader\fixtures.py", line 367, in copy_rates_from_pos
+    base = closes[0]
+           ~~~~~~^^^
+IndexError: list index out of range
+
+======================================================================
+ERROR: test_a_pending_order_is_blocked_too (tests.test_news.KernelCheck.test_a_pending_order_is_blocked_too)
+A buy stop placed before a release triggers during it, which is the case
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 263, in test_a_pending_order_is_blocked_too
+    verdict = self.h.kernel.check(kind="pending", type="stop", price=1.09500,
+                                  volume=0.1, stop=None, allow_no_sl=True)
+TypeError: RiskKernel.check() got an unexpected keyword argument 'kind'
+
+======================================================================
+FAIL: test_round_numbers_come_from_the_price_magnitude (tests.test_levels.Levels.test_round_numbers_come_from_the_price_magnitude)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_levels.py", line 64, in test_round_numbers_come_from_the_price_magnitude
+    self.assertTrue(out["round_numbers"])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true
+
+======================================================================
+FAIL: test_busiest_and_quietest_are_disjoint_when_there_is_enough_data (tests.test_sessions.Sessions.test_busiest_and_quietest_are_disjoint_when_there_is_enough_data)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_sessions.py", line 61, in test_busiest_and_quietest_are_disjoint_when_there_is_enough_data
+    self.assertEqual(len(set(out["busiest_server_hours"]) &
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         set(out["quietest_server_hours"])), 0)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0
+
+======================================================================
+FAIL: test_share_of_a_typical_hour_is_the_uniform_share_as_one (tests.test_sessions.Sessions.test_share_of_a_typical_hour_is_the_uniform_share_as_one)
+A fair share of a day is 1/24, so a ratio of 1.0 means an average hour.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_sessions.py", line 68, in test_share_of_a_typical_hour_is_the_uniform_share_as_one
+    self.assertIsInstance(out["current"]["vs_fair_share"], float)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None is not an instance of <class 'float'>
+
+======================================================================
+FAIL: test_an_index_cfd_is_a_dollar_instrument (tests.test_news.Currencies.test_an_index_cfd_is_a_dollar_instrument)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 182, in test_an_index_cfd_is_a_dollar_instrument
+    self.assertEqual(news.currencies_for(self.load("US30")), {"USD"})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the first set but not the second:
+'EUR'
+
+======================================================================
+FAIL: test_gold_is_quoted_in_dollars_and_counted_in_ounces (tests.test_news.Currencies.test_gold_is_quoted_in_dollars_and_counted_in_ounces)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 179, in test_gold_is_quoted_in_dollars_and_counted_in_ounces
+    self.assertEqual(news.currencies_for(self.load("XAUUSD")), {"XAU", "USD"})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the first set but not the second:
+'EUR'
+
+======================================================================
+FAIL: test_a_stale_export_fails_closed_under_enforce (tests.test_news.KernelCheck.test_a_stale_export_fails_closed_under_enforce)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 238, in test_a_stale_export_fails_closed_under_enforce
+    self.assertIn("event_blackout", self.codes(verdict))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'event_blackout' not found in []
+
+======================================================================
+FAIL: test_an_event_window_blocks_a_market_order_under_enforce (tests.test_news.KernelCheck.test_an_event_window_blocks_a_market_order_under_enforce)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 210, in test_an_event_window_blocks_a_market_order_under_enforce
+    self.assertIn("event_blackout", self.codes(verdict))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'event_blackout' not found in []
+
+======================================================================
+FAIL: test_lowering_the_threshold_catches_moderate_events (tests.test_news.KernelCheck.test_lowering_the_threshold_catches_moderate_events)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 277, in test_lowering_the_threshold_catches_moderate_events
+    self.assertIn("event_blackout", self.codes(verdict))
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'event_blackout' not found in []
+
+======================================================================
+FAIL: test_the_same_window_only_warns_under_warn (tests.test_news.KernelCheck.test_the_same_window_only_warns_under_warn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\LoveThisGameNot\Documents\EATEST\mt5-trader\tests\test_news.py", line 219, in test_the_same_window_only_warns_under_warn
+    self.assertTrue(any("US CPI" in w for w in verdict["warnings"]))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 54 tests in 0.268s
+
+FAILED (failures=9, errors=3)

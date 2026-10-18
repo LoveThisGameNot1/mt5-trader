@@ -33,6 +33,8 @@ notes
 | `max_spread_points` | 200 | entry cost |
 | `max_slippage_points` | 50 | deviation tolerance |
 | `max_quote_age_seconds` | 3600 | how stale a quote may be and still count as a market |
+| `correlation_limit` | 0.99 | how correlated another position may be before it is the same bet |
+| `calendar_max_age_seconds` | 3600 | how stale the calendar export may be under `enforce` |
 | `loss_cooldown_seconds` | 900 | nothing after a loss for this long |
 | `duplicate_window_seconds` | 300 | re-entry on the same symbol |
 
@@ -93,12 +95,24 @@ unless freshness is checked against the measured clock
 (`guards.max_quote_age_seconds`, default 15 minutes, ceiling one hour). Pending
 orders skip both, because resting until the price arrives is what they are for.
 
+Then the scheduled releases. The kernel reads the terminal's economic calendar
+through a small MQL5 service (the Python API has no calendar functions at all)
+and turns each event into a window rather than handing the model a headline. See
+the `event_blackout` check below.
+
 **Size** – the volume is normalised to the symbol's own `volume_min + n *
 volume_step` sequence, then bounded by the per-order lot limit, and the money at
 risk against the stop is compared with the per-trade allowance.
 
-**Portfolio** – the position count, the count on this symbol, the sum of open
-risk including this order, and positions with no stop at all.
+**Portfolio** – the position count, the count on this symbol, the sum of open risk
+including this order, positions with no stop at all, and the correlation of this
+symbol against everything already open. Correlation is measured on returns over
+the intersection of bar timestamps, and below twenty observations it is refused
+rather than reported: a coefficient from a dozen bars is noise, and a gate that
+fires on noise is worse than no gate. Same direction at or above
+`guards.correlation_limit` blocks; the opposite direction only warns, because two
+opposed correlated positions partly offset each other. An unmeasurable symbol
+fails closed.
 
 **The day** – equity against the equity at server midnight, the drawdown from the
 day's peak, the order count, the per-minute rate, the duplicate window, and the
@@ -132,6 +146,21 @@ limit that only fires after the damage is booked.
 **Money is four columns.** `profit`, `swap`, `commission` and `fee` are separate
 fields in MT5. A loss limit that reads only `profit` misses overnight swap and
 per-lot commission, which on a CFD position can exceed the profit.
+
+## The new inputs do not change how much a mistake costs
+
+The calendar and the COT report change *which* trades you take. They do not
+change how much a bad one can lose. That distinction is the reason they sit where
+they sit: the calendar is a gate (a window that blocks), and the COT read is
+context a human reads before deciding, never an automatic trigger.
+
+Two limits worth stating plainly:
+
+* **A COT report is three days old when it arrives.** It is published on a Friday
+  for the Tuesday before it. It measures crowding, not direction and not timing.
+* **Correlation is not stable.** A coefficient measured over 120 daily bars is a
+  statement about the recent regime, not a constant. `guards.correlation_limit`
+  is a tripwire against obvious doubling, not a portfolio model.
 
 ## What this cannot protect you from
 

@@ -58,7 +58,28 @@
     ],
     "max_positions_per_symbol": 1,
     "treat_stopless_as_full_risk": true,
-    "max_quote_age_seconds": 900
+    "max_quote_age_seconds": 900,
+
+    "correlation_limit": 0.8,
+    "correlation_lookback_bars": 120,
+    "correlation_min_points": 20,
+    "correlation_action": "block",
+
+    "calendar": "warn",
+    "calendar_min_importance": "high",
+    "calendar_before_minutes": 15,
+    "calendar_after_minutes": 15,
+    "calendar_max_age_seconds": 1800
+  },
+
+  "calendar": {
+    "_comment": "Only needed when the export is not in the terminal's usual folders. The service writes to <terminal data folder>/MQL5/Files/mt5trader_calendar.json, or the common folder; python tools/build_sidecar.py reports which.",
+    "file": null
+  },
+
+  "cot": {
+    "_comment": "Written by python tools/fetch_cot.py. The server only reads it.",
+    "file": null
   },
 
   "journal": {
