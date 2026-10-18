@@ -66,5 +66,70 @@ class FieldAccess(unittest.TestCase):
         self.assertEqual(json.loads(text), {"a": None, "b": [1, 2]})
 
 
+class NumpyStructuredRecords(unittest.TestCase):
+    """When numpy is installed the MetaTrader5 package returns copy_rates_* and
+    copy_ticks_* as a numpy structured array, and one row of that is a numpy.void.
+    Its fields are in the dtype, invisible to ``dir()``, and ``getattr(row,
+    "close")`` returns nothing -- so a bar arrives with no close price and the
+    only symptom is a KeyError several layers away.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib
+        cls.np = importlib.import_module("numpy")
+
+    def setUp(self):
+        self.dtype = [("time", "<i8"), ("open", "<f8"), ("high", "<f8"), ("low", "<f8"),
+                      ("close", "<f8"), ("tick_volume", "<u8"), ("spread", "<i4"),
+                      ("real_volume", "<u8")]
+        self.rows = self.np.array(
+            [(1792324800, 81731.78, 82295.46, 81731.78, 81931.32, 2601, 1, 0),
+             (1792339200, 81931.32, 82400.00, 81800.00, 82100.55, 3100, 1, 0)],
+            dtype=self.dtype)
+        self.row = self.rows[0]
+
+    def test_dir_does_not_advertise_the_fields_which_is_the_whole_problem(self):
+        self.assertNotIn("close", dir(self.row))
+
+    def test_getattr_on_a_void_returns_nothing(self):
+        self.assertIsNone(getattr(self.row, "close", None))
+
+    def test_get_reads_through_the_dtype(self):
+        self.assertAlmostEqual(records.get(self.row, "close"), 81931.32)
+
+    def test_as_dict_keeps_the_named_fields(self):
+        out = records.as_dict(self.row, ["time", "open", "high", "low", "close", "spread"])
+        self.assertEqual(set(out), {"time", "open", "high", "low", "close", "spread"})
+        self.assertAlmostEqual(out["close"], 81931.32)
+        self.assertAlmostEqual(out["high"], 82295.46)
+
+    def test_numpy_integers_become_real_integers_not_strings(self):
+        out = records.as_dict(self.row, ["time", "tick_volume"])
+        self.assertIsInstance(out["time"], int)
+        self.assertIsInstance(out["tick_volume"], int)
+        self.assertEqual(out["time"], 1792324800)
+
+    def test_a_record_is_json_serialisable(self):
+        import json
+        text = json.dumps(records.as_dict(self.row))
+        self.assertIn("81931.32", text)
+
+    def test_a_structured_array_is_iterated_not_treated_as_one_record(self):
+        """Only the scalar is a record. The array is a sequence of records, and
+        reading it as one record returns a dict of whole columns."""
+        out = records.to_jsonable(self.rows)
+        self.assertIsInstance(out, list)
+        self.assertEqual(len(out), 2)
+        self.assertAlmostEqual(out[0]["close"], 81931.32)
+        self.assertAlmostEqual(out[1]["close"], 82100.55)
+
+    def test_the_whole_array_survives_a_round_trip(self):
+        import json
+        payload = json.loads(records.dumps(self.rows))
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(set(payload[0]), {name for name, _ in self.dtype})
+
+
 if __name__ == "__main__":
     unittest.main()

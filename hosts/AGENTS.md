@@ -59,6 +59,10 @@ again.
   `MT5_ALLOW_KILL_RELEASE=1` and a human.
 * **Missing data fails closed.** No quote, no margin figure, no metadata: that is a
   block, not a pass.
+* **A quote that exists is not a quote that is current.** A Friday tick still has a
+  bid, an ask and a one-point spread. On a closed market a market order is blocked
+  by `quote_freshness`; a pending order is not, and that is when a breakout order
+  belongs in the market.
 
 ## Reading a verdict
 

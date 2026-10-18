@@ -43,6 +43,15 @@ things that decide whether it survives a real account, and where each one lives:
 * **The broker's clock is measured.** MT5 has three clocks called "time" and no
   offset in the API. The offset is derived from the newest tick, and declared
   unmeasurable when the market is closed instead of invented.
+* **The terminal's field names are asserted, not trusted.** They are
+  `trade_tick_size` and `trade_tick_value_loss`. Getting that wrong yields a zero,
+  and a zero tick value sizes every position at nothing without raising.
+* **A quote that exists is not a quote that is current.** A Friday tick still has a
+  bid, an ask and a one-point spread, so a closed market looks open until
+  freshness is compared against the clock.
+* **`copy_rates_*` returns numpy when numpy is installed**, as a structured array
+  whose rows hide their fields from `dir()` and `getattr`. Handled, and tested
+  against real numpy.
 
 Long version, with the reproducing example for each: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -158,7 +167,7 @@ lists them. Full reference with every argument: [docs/TOOLS.md](docs/TOOLS.md).
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .   # 260 tests, offline, ~2s
+python -m unittest discover -s tests -t .   # 281 tests, offline, ~2s
 ```
 
 The suite needs no terminal, no Windows and no MetaTrader5 wheel. `fixtures.py`
@@ -196,4 +205,5 @@ config.example.json
 ```
 
 MIT. Built by [LoveThisGameNot1](https://github.com/LoveThisGameNot1).
+
 

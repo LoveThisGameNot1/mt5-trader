@@ -395,10 +395,18 @@ class RiskKernel:
 
         reference = price
         if reference is None and kind == "market":
-            reference = instrument.entry_price(side)
+            reference = instrument.entry_price(side) if instrument.has_quotes else None
         if reference is None:
+            if kind == "market" and not instrument.has_quotes:
+                raise PlanError(
+                    "%s has no live bid or ask, so a market order cannot be priced. "
+                    "Either the session is closed or the symbol is not subscribed in "
+                    "Market Watch. Wait for the session, or use a pending order, which "
+                    "needs a price you supply rather than a live quote."
+                    % instrument.symbol)
             raise PlanError(
-                "no price to work from: %s has no quotes and the plan gave no price" % instrument.symbol)
+                "no price to work from: %s has no quotes and the plan gave no price"
+                % instrument.symbol)
         reference = instrument.normalize_price(reference)
 
         min_points = records.inum(self.settings.guards.get("min_stop_distance_points"), 0) or 0
@@ -587,16 +595,62 @@ class RiskKernel:
 
         # 4. conditions at entry -------------------------------------------
         if spec["kind"] == "market":
+            record("quotes", instrument.has_quotes,
+                   "bid %s / ask %s (tick %s)" % (
+                       instrument.bid, instrument.ask,
+                       records.iso_time(instrument.tick_time)),
+                   has_quotes=instrument.has_quotes, tick_time=instrument.tick_time)
+            if not instrument.has_quotes:
+                blocking.append(
+                    "quotes: %s has no live bid or ask, so a market order has no price "
+                    "to be sent at. Either the session is closed or the symbol is not "
+                    "subscribed in Market Watch. A pending order does not need quotes; "
+                    "wait for the session, or use one." % instrument.symbol)
+
+            # A quote being present is not the same as it being current. A Friday
+            # tick still has a bid and an ask and still shows a one-point spread, so
+            # without this the kernel is happy on a Sunday and the order comes back
+            # MARKET_CLOSED after a pointless round trip.
+            max_age = records.inum(self.settings.guards.get("max_quote_age_seconds"), 900) or 0
+            age = None
+            if instrument.tick_time:
+                age = int((time.time() + clock.offset) - instrument.tick_time)
+            fresh = age is not None and age <= max_age
+            record("quote_freshness", fresh,
+                   ("the last tick is %d seconds old" % age if age is not None
+                    else "the terminal reported no tick timestamp"),
+                   age_seconds=age, max_age_seconds=max_age,
+                   tick_time=records.iso_time(instrument.tick_time))
+            if not fresh:
+                if age is None:
+                    blocking.append(
+                        "quote_freshness: %s has no tick timestamp, so there is no way "
+                        "to tell whether the quote is current. Failing closed."
+                        % instrument.symbol)
+                else:
+                    blocking.append(
+                        "quote_freshness: the last tick on %s is %.1f hours old, so the "
+                        "market is closed or the symbol has stopped trading. A market "
+                        "order would be refused with MARKET_CLOSED. Use a pending order, "
+                        "which needs no live quote, or wait for the session."
+                        % (instrument.symbol, age / 3600.0))
+
             spread = instrument.spread_points
             allowed_spread = records.inum(self.settings.execution.get("max_spread_points"), 30)
-            ok = spread is not None and spread <= allowed_spread
-            record("spread", ok, "%s of %s points allowed" % (spread, allowed_spread),
+            spread_ok = spread is not None and spread <= allowed_spread
+            record("spread", spread_ok,
+                   ("%s of %s points allowed" % (spread, allowed_spread)
+                    if spread is not None else
+                    "no spread to measure: %s has no live quote" % instrument.symbol),
                    spread_points=spread, limit_points=allowed_spread)
-            if not ok:
+            if spread is not None and not spread_ok:
                 blocking.append(
                     "spread: %s is %s points wide, over the %s point limit. Waiting is "
                     "cheaper than entering here." % (instrument.symbol, spread, allowed_spread))
         else:
+            record("quotes", True, "not checked for a pending order")
+            record("quote_freshness", True,
+                   "not checked for a pending order: it rests until the price arrives")
             record("spread", True, "not checked for a pending order", spread_points=None)
 
         hour = clock.now.hour

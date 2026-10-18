@@ -417,6 +417,7 @@ class Server:
         except Mt5Error:
             clock_info = None
         real = records.inum(account.get("trade_mode"), None) == 2
+        schema = self._schema_probe(account)
         gate = {
             "autonomy": self.settings.autonomy,
             "can_place_orders": self.settings.at_least("auto"),
@@ -443,6 +444,10 @@ class Server:
         if real and self.settings.allow_live and self.settings.autonomy == "full":
             problems.append("LIVE account with full autonomy: orders will be sent "
                             "without a per-order confirmation.")
+        if schema is not None and not schema.get("ok"):
+            problems.append("the terminal does not report the symbol fields the kernel "
+                            "needs (%s), so no position can be sized."
+                            % ", ".join(schema.get("required_missing") or []))
         return {
             "server": {"name": SERVER_NAME, "version": __version__,
                        "protocol": PROTOCOL_VERSION},
@@ -454,6 +459,7 @@ class Server:
             "account": account,
             "clock": clock_info,
             "gates": gate,
+            "symbol_schema": schema,
             "settings": self.settings.summary(),
             "last_error": status.get("last_error"),
             "bridge_stats": status.get("stats"),
@@ -462,6 +468,34 @@ class Server:
                      if status.get("connected") else
                      "fix the connection, then call mt5_status again"),
         }
+
+    def _schema_probe(self, account):
+        """Assert the kernel's assumptions about symbol_info field names against
+        the live terminal.
+
+        A renamed field reads as None, a None falls back to a default, and the
+        default for a tick value is zero. A zero tick value does not raise: it
+        sizes every position at nothing and looks like a quiet symbol. So the
+        names are checked rather than trusted.
+        """
+        if not account:
+            return None
+        probe = None
+        wanted = (self.settings.config.get("symbols") or [None])[0]
+        if wanted:
+            try:
+                probe = self.bridge.call("symbol_info", self.settings.symbol(wanted))
+            except Mt5Error:
+                probe = None
+        if probe is None:
+            try:
+                first = self.bridge.call("symbols_get") or ()
+                probe = first[0] if first else None
+            except Mt5Error:
+                probe = None
+        if probe is None:
+            return {"ok": None, "meaning": "no symbol available to probe"}
+        return instruments.check_schema(probe)
 
     def tool_clock(self, args):
         clock = self.kernel.clock()

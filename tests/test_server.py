@@ -117,6 +117,16 @@ class ReadTools(ServerTestCase):
         self.assertIn("autonomy", payload["gates"])
         self.assertFalse(payload["gates"]["can_place_orders"])
 
+    def test_status_asserts_the_symbol_field_names_against_the_terminal(self):
+        """""The only thing that catches a terminal build that renamed a field, and the
+        difference between a loud failure and a silent zero."""""
+        self.build()
+        payload, _ = self.call("mt5_status")
+        schema = payload["symbol_schema"]
+        self.assertTrue(schema["ok"], schema["required_missing"])
+        self.assertIn("trade_tick_size", schema["present"])
+        self.assertEqual(schema["required_missing"], [])
+
     def test_status_reports_a_broken_terminal_instead_of_raising(self):
         """The doctor skill has to work when nothing works, otherwise it is useless
         exactly when it is needed."""
@@ -161,6 +171,18 @@ class ReadTools(ServerTestCase):
                                                     "timeframe": "M7"})
         self.assertTrue(is_error)
         self.assertIn("H1", payload["error"])
+
+    def test_rates_arrive_as_bars_with_a_close_price(self):
+        self.build()
+        payload, is_error = self.call("mt5_rates", {"symbol": "EURUSD",
+                                                    "timeframe": "H1", "count": 30})
+        self.assertFalse(is_error)
+        self.assertEqual(payload["bars"], 30)
+        first = payload["rates"][0]
+        for field in ("time", "open", "high", "low", "close", "tick_volume", "spread"):
+            self.assertIn(field, first, field)
+        self.assertIsInstance(first["close"], float)
+        self.assertIsInstance(first["tick_volume"], int)
 
     def test_size_refuses_without_a_risk_budget(self):
         self.build()
@@ -362,3 +384,4 @@ class GuardTools(ServerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

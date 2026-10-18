@@ -32,6 +32,7 @@ notes
 | `max_lots_per_order` | 10.0 | one order's volume |
 | `max_spread_points` | 200 | entry cost |
 | `max_slippage_points` | 50 | deviation tolerance |
+| `max_quote_age_seconds` | 3600 | how stale a quote may be and still count as a market |
 | `loss_cooldown_seconds` | 900 | nothing after a loss for this long |
 | `duplicate_window_seconds` | 300 | re-entry on the same symbol |
 
@@ -86,6 +87,11 @@ new exposure opens. Closing is always allowed.
 (`trade_mode` long-only, short-only, close-only), the side is permitted by you,
 the symbol is not on the block list, the spread is inside the limit, the hour is
 not in `blocked_server_hours`, and we are not inside a `news_blackout` window.
+For a market order, the quote has to exist *and* be current: a Friday tick still
+carries a bid, an ask and a one-point spread, so a closed market looks open
+unless freshness is checked against the measured clock
+(`guards.max_quote_age_seconds`, default 15 minutes, ceiling one hour). Pending
+orders skip both, because resting until the price arrives is what they are for.
 
 **Size** – the volume is normalised to the symbol's own `volume_min + n *
 volume_step` sequence, then bounded by the per-order lot limit, and the money at

@@ -19,7 +19,7 @@ answer. Consequences, all deliberate:
   crosses a boundary;
 * the module is imported *inside* the worker, so the kernel stays importable and
   testable on a machine with no Windows and no terminal, which is what makes the
-  260-test suite possible;
+  281-test suite possible;
 * a terminal that was restarted between two calls is detected and re-initialised
   instead of poisoning every call after it.
 
@@ -145,14 +145,47 @@ account. A partial close that would leave a remainder under the symbol's minimum
 volume is refused by the broker, so the remainder is closed in full instead and
 the caller is told.
 
-## Structs are read defensively
+## Structs are read defensively, and the names are verified
 
 Every MT5 result is a CPython structseq, and the field sets are not frozen:
 MetaQuotes adds fields between builds and some exist only on certain account and
 instrument types. `records.get` never raises — a missing field degrades to a known
-value. `records.to_jsonable` checks `_fields` *before* the tuple branch, because a
-structseq is a tuple subclass and the other order silently flattens a whole
-position into a list of bare values. (A test caught exactly that.)
+value. `records.to_jsonable` checks the record case *before* the sequence case,
+because a structseq is a tuple subclass and the other order silently flattens a
+whole position into a list of bare values. (A test caught exactly that.)
+
+Two harder versions of the same problem, both found by pointing the thing at a
+real terminal rather than at a fixture:
+
+**The tick fields have a `trade_` prefix.** They are `trade_tick_size` and
+`trade_tick_value_loss`, not `tick_size` and `tick_value`. Reading a name the
+terminal does not have returns None, a None falls back to a default, and the
+default for a tick value is zero. A zero tick value does not raise: it makes every
+position risk nothing and every symbol look quiet. So `instruments.check_schema`
+asserts the names against the live terminal, `mt5_status` reports a
+`symbol_schema` block, and a missing required field is printed as a problem
+rather than discovered later as a wrong position size.
+
+**`copy_rates_*` returns numpy when numpy is installed.** One row of that array is
+a `numpy.void`: its fields live in `dtype.names`, `dir()` does not list them,
+`getattr(row, "close")` returns nothing, and it is not a tuple. Every obvious way
+to read it misses, so the bar arrives with no close price. `records._field_names`
+handles all three shapes (structseq, namedtuple, numpy structured scalar), and a
+numpy structured *array* is treated as a sequence of records rather than as one
+record whose fields are whole columns. `to_jsonable` converts numpy integers with
+`.item()`, because otherwise a volume serialises as `"<numpy.int64 object at
+0x...>"` and reaches the model as text.
+
+## A quote can exist and still be stale
+
+A Friday tick still carries a bid, an ask and a one-point spread. On a Sunday the
+kernel will happily report `market_open: true` (that flag is about broker
+permission, not sessions) with a spread of one point, and the order comes back
+`MARKET_CLOSED` after a pointless round trip. `quote_freshness` compares the
+tick's server timestamp against the measured clock, so a closed market is caught
+locally. Pending orders skip the check: resting until the price arrives is
+exactly what a breakout order is for, and the closed session is when it belongs in
+the market.
 
 ## Layout
 
@@ -172,13 +205,13 @@ mt5trader/
   server.py       the MCP stdio server and the tool registry
   cli.py          doctor / config / tools / selftest / serve
   fixtures.py     four instrument types and a stand-in terminal, for tests
-tests/            260 tests, offline, no terminal
+tests/            281 tests, offline, no terminal
 ```
 
 ## Testing
 
 ```
-python -m unittest discover -s tests -t .      # 260 tests, about 2 seconds
+python -m unittest discover -s tests -t .      # 281 tests, about 2 seconds
 python -m mt5trader selftest                   # the same guarantees, for a shell
 ```
 
@@ -188,4 +221,5 @@ reconciliation, freeze and drift paths are all exercised without a broker. Four
 instrument types are in there specifically because they break naive code: a
 5-digit forex pair, gold, an index CFD with one digit, a crypto contract, and a
 symbol whose partial closes strand a remainder below the minimum.
+
 

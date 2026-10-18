@@ -3,7 +3,7 @@
 The numbers below are the ones that break naive sizing code, which is why they
 are the ones used in the tests:
 
-* EURUSD, a 5-digit forex symbol where ``tick_size`` is one point and a pip is
+* EURUSD, a 5-digit forex symbol where ``trade_tick_size`` is one point and a pip is
   ten points;
 * XAUUSD, gold, where the contract size and the tick value have no pip in them
   at all;
@@ -31,10 +31,10 @@ def make_symbol(name, **overrides):
         "path": "Test\\" + name,
         "digits": 5,
         "point": 0.00001,
-        "tick_size": 0.00001,
-        "tick_value": 1.0,
-        "tick_value_profit": 1.0,
-        "tick_value_loss": 1.0,
+        "trade_tick_size": 0.00001,
+        "trade_tick_value": 1.0,
+        "trade_tick_value_profit": 1.0,
+        "trade_tick_value_loss": 1.0,
         "contract_size": 100000.0,
         "volume_min": 0.01,
         "volume_max": 100.0,
@@ -64,15 +64,16 @@ def make_symbol(name, **overrides):
     # A symbol's profit and loss tick values track its tick value unless they are
     # set explicitly. Forgetting this is how a fixture ends up claiming $1000 a
     # point on a crypto contract, and how a test comes to encode nonsense.
-    if "tick_value" in overrides:
-        base["tick_value_profit"] = overrides.get("tick_value_profit",
-                                                  overrides["tick_value"])
-        base["tick_value_loss"] = overrides.get("tick_value_loss", overrides["tick_value"])
+    if "trade_tick_value" in overrides:
+        base["trade_tick_value_profit"] = overrides.get(
+            "trade_tick_value_profit", overrides["trade_tick_value"])
+        base["trade_tick_value_loss"] = overrides.get(
+            "trade_tick_value_loss", overrides["trade_tick_value"])
     return base
 
 
 def eurusd():
-    return make_symbol("EURUSD", digits=5, point=0.00001, tick_size=0.00001,
+    return make_symbol("EURUSD", digits=5, point=0.00001, trade_tick_size=0.00001,
                        bid=1.08500, ask=1.08512)
 
 
@@ -96,19 +97,19 @@ def freeze_only():
 
 
 def xauusd():
-    return make_symbol("XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0,
+    return make_symbol("XAUUSD", digits=2, point=0.01, trade_tick_size=0.01, trade_tick_value=1.0,
                        contract_size=100.0, currency_base="XAU", bid=2400.00, ask=2400.35)
 
 
 def us30():
-    return make_symbol("US30", digits=1, point=0.1, tick_size=0.1, tick_value=0.1,
+    return make_symbol("US30", digits=1, point=0.1, trade_tick_size=0.1, trade_tick_value=0.1,
                        contract_size=1.0, currency_base="USD", currency_profit="USD",
                        volume_min=0.1, volume_step=0.1, bid=39450.0, ask=39453.0,
                        filling_mode=1)
 
 
 def btcusd():
-    return make_symbol("BTCUSD", digits=2, point=0.01, tick_size=0.01, tick_value=0.01,
+    return make_symbol("BTCUSD", digits=2, point=0.01, trade_tick_size=0.01, trade_tick_value=0.01,
                        contract_size=1.0, currency_base="BTC", currency_profit="USD",
                        bid=63000.00, ask=63025.00)
 
@@ -116,7 +117,7 @@ def btcusd():
 def testm():
     """volume_min 0.1 with volume_step 0.1: valid sizes are 0.1, 0.2, 0.3 ..."""
     return make_symbol("TESTM", volume_min=0.1, volume_step=0.1, volume_max=5.0,
-                       tick_size=0.001, point=0.001, tick_value=0.5, contract_size=10.0,
+                       trade_tick_size=0.001, point=0.001, trade_tick_value=0.5, contract_size=10.0,
                        digits=3, bid=10.000, ask=10.020, filling_mode=2,
                        trade_stops_level=20)
 
@@ -126,7 +127,7 @@ def one_lot_minimum():
     that sizing reports the minimum possible risk instead of silently going
     below the broker's floor."""
     return make_symbol("BIG", volume_min=1.0, volume_step=1.0, volume_max=50.0,
-                       tick_size=1.0, point=1.0, tick_value=5.0, contract_size=1.0,
+                       trade_tick_size=1.0, point=1.0, trade_tick_value=5.0, contract_size=1.0,
                        digits=1, bid=100.0, ask=100.5)
 
 
@@ -331,6 +332,42 @@ class FakeMt5:
             "volume_real": 1.0,
         }
 
+    def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        """Synthetic bars, as plain dicts.
+
+        The real package returns a numpy structured array here when numpy is
+        installed, and one row of that is a numpy.void whose fields are invisible
+        to dir() and getattr(). That shape is covered by the records tests rather
+        than by this fake; what matters here is that the tool path produces bars
+        with a close price.
+        """
+        found = self.symbols.get(symbol)
+        if found is None:
+            return None
+        base = found.get("bid") or 100.0
+        step_seconds = int(timeframe) if int(timeframe) < 10000 else 3600
+        spot = int(self._tick_time or time.time())
+        spread_points = 1
+        if found.get("ask") and found.get("point"):
+            spread_points = int(round((found["ask"] - found["bid"]) / found["point"]))
+        out = []
+        for index in range(int(count)):
+            close = base + (index - int(count)) * base * 0.0001
+            out.append({
+                "time": spot - (int(count) - index) * step_seconds * 60,
+                "open": close - 0.1,
+                "high": close + 0.5,
+                "low": close - 0.5,
+                "close": close,
+                "tick_volume": 100 + index,
+                "spread": spread_points,
+                "real_volume": 0,
+            })
+        return out
+
+    def copy_rates_range(self, symbol, timeframe, date_from, date_to):
+        return self.copy_rates_from_pos(symbol, timeframe, 0, 50)
+
     def positions_get(self, ticket=None, symbol=None):
         out = []
         for position in self.positions:
@@ -378,7 +415,7 @@ class FakeMt5:
         found = self.symbols.get(symbol)
         if not found:
             return None
-        per_unit = found["tick_value_loss"] / found["tick_size"]
+        per_unit = found["trade_tick_value_loss"] / found["trade_tick_size"]
         move = (float(price_close) - float(price_open)) if action == 0 else \
             (float(price_open) - float(price_close))
         return move * per_unit * float(volume)
@@ -505,3 +542,6 @@ class FakeMt5:
     # -- convenience -------------------------------------------------------
     def deal_time_offset(self, seconds):
         self._tick_time = time.time() + seconds
+
+
+

@@ -61,18 +61,29 @@ def server_offset(bridge, symbol_hint=None):
     from the future, so a positive difference is the broker sitting at a positive
     offset. Only a tick more than fifteen minutes *behind* local time is
     ambiguous, and that is the case this refuses to guess at.
+
+    Candidates are ordered Market Watch first and then the rest of the terminal.
+    That order is not cosmetic: on a weekend every FX pair is stale while a crypto
+    CFD three hundred symbols down the alphabetical list is trading, and sampling
+    only the first handful of symbols reported the offset as unmeasurable when it
+    was sitting right there.
     """
     candidates = []
     if symbol_hint:
         candidates.append(symbol_hint)
-    for info in (bridge.call("symbols_get") or ())[:400]:
+    visible, rest = [], []
+    for info in (bridge.call("symbols_get") or ()):
         name = records.get(info, "name")
-        if name and name not in candidates:
-            candidates.append(name)
-        if len(candidates) >= 12:
-            break
+        if not name or name in candidates:
+            continue
+        if records.get(info, "visible", False):
+            visible.append(name)
+        else:
+            rest.append(name)
+    candidates.extend(visible)
+    candidates.extend(rest)
     best = None
-    for name in candidates:
+    for name in candidates[:60]:
         tick = bridge.call("symbol_info_tick", name)
         if tick is None:
             continue

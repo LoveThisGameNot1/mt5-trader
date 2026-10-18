@@ -57,6 +57,60 @@ EXECUTION_EXCHANGE = 3
 POSITION_TYPE_BUY = 0
 POSITION_TYPE_SELL = 1
 
+# The fields the kernel reads out of symbol_info, under their real MetaTrader 5
+# names. Note the "trade_" prefix: the tick size and the tick values are
+# ``trade_tick_size`` and ``trade_tick_value_loss``, not ``tick_size`` and
+# ``tick_value``. Reading a name that does not exist yields None, and a None that
+# falls back to a default turns into a zero, and a zero tick value looks exactly
+# like a symbol nobody can price. So the names are asserted against the live
+# terminal instead of trusted: see :func:`check_schema` and the schema block in
+# mt5_status.
+EXPECTED_SYMBOL_FIELDS = (
+    "name", "digits", "point", "trade_tick_size", "trade_tick_value",
+    "trade_tick_value_loss", "trade_tick_value_profit", "contract_size",
+    "volume_min", "volume_max", "volume_step", "trade_stops_level",
+    "trade_freeze_level", "trade_mode", "trade_execution", "filling_mode",
+    "trade_calc_mode", "currency_base", "currency_profit", "currency_margin",
+)
+
+# Without these, a position cannot be sized at all: there is either no price
+# increment to count in, or no money attached to it.
+REQUIRED_SYMBOL_FIELDS = (
+    "digits", "point", "trade_tick_size", "trade_tick_value_loss",
+    "volume_min", "volume_step",
+)
+
+_MISSING = object()
+
+
+def check_schema(info):
+    """Which of the fields the kernel depends on the terminal actually exposes.
+
+    Run against a live symbol, this is the only thing that catches a terminal
+    build that renamed a field. It is cheap and it is the difference between a
+    loud failure and a silent zero.
+    """
+    present, missing = [], []
+    for name in EXPECTED_SYMBOL_FIELDS:
+        value = records.get(info, name, _MISSING)
+        if value is _MISSING or value is None:
+            missing.append(name)
+        else:
+            present.append(name)
+    required_missing = [n for n in REQUIRED_SYMBOL_FIELDS if n in missing]
+    return {
+        "symbol": records.get(info, "name"),
+        "present": present,
+        "missing": missing,
+        "required_missing": required_missing,
+        "ok": not required_missing,
+        "meaning": ("the kernel can read every field it needs"
+                    if not required_missing else
+                    "the kernel cannot size a position on this terminal: %s is/are "
+                    "not being reported. Sizing would silently divide by a zero tick "
+                    "value." % ", ".join(required_missing)),
+    }
+
 FILLING_NAMES = {
     ORDER_FILLING_FOK: "FOK",
     ORDER_FILLING_IOC: "IOC",
@@ -111,12 +165,19 @@ class Instrument:
 
         self.digits = records.inum(r(info, "digits"), 5)
         self.point = records.fnum(r(info, "point"), 10 ** -self.digits)
-        self.tick_size = records.fnum(r(info, "tick_size"), self.point)
-        self.tick_value = records.fnum(r(info, "tick_value"), 0.0)
-        self.tick_value_profit = records.fnum(r(info, "tick_value_profit"), self.tick_value)
+        # Real MetaTrader 5 names. See EXPECTED_SYMBOL_FIELDS above for why these
+        # are not called tick_size and tick_value.
+        self.tick_size = records.fnum(r(info, "trade_tick_size"), None)
+        self.tick_size_reported = self.tick_size is not None
+        if self.tick_size is None:
+            self.tick_size = self.point
+        self.tick_value = records.fnum(r(info, "trade_tick_value"), 0.0)
+        self.tick_value_profit = records.fnum(r(info, "trade_tick_value_profit"),
+                                             self.tick_value)
         # Risk must use the loss side: on a cross-currency symbol the two tick
         # values differ, and the loss one is the one that bites.
-        self.tick_value_loss = records.fnum(r(info, "tick_value_loss"), self.tick_value)
+        self.tick_value_loss = records.fnum(r(info, "trade_tick_value_loss"),
+                                           self.tick_value)
         self.contract_size = records.fnum(r(info, "contract_size"), 0.0)
 
         self.volume_min = records.fnum(r(info, "volume_min"), 0.01)
@@ -196,6 +257,15 @@ class Instrument:
         return self.bid if side == "buy" else self.ask
 
     # -- per-lot money math ------------------------------------------------
+    @property
+    def pricing_ok(self):
+        """Whether the terminal reported enough to price risk at all.
+
+        A zero tick value is not a small risk, it is an unpriceable one, and the
+        only honest answer is to refuse rather than to size something.
+        """
+        return bool(self.tick_value_loss) and bool(self.tick_size) and self.tick_size > 0
+
     @property
     def value_per_price_unit_per_lot(self):
         """Account-currency value of a one-unit price move, for one lot.
@@ -453,8 +523,11 @@ class Instrument:
             "digits": self.digits,
             "point": self.point,
             "tick_size": self.tick_size,
+            "tick_size_reported": self.tick_size_reported,
             "tick_value": self.tick_value,
             "tick_value_loss": self.tick_value_loss,
+            "tick_value_profit": self.tick_value_profit,
+            "pricing_ok": self.pricing_ok,
             "contract_size": self.contract_size,
             "volume_min": self.volume_min,
             "volume_max": self.volume_max,

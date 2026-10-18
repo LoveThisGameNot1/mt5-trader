@@ -125,7 +125,11 @@ class StopDistanceHelper(unittest.TestCase):
         self.assertAlmostEqual(sizing.stop_distance(1.0, instrument, 100.0), 0.001, places=6)
 
     def test_unknown_when_the_symbol_has_no_tick_value(self):
-        instrument = instruments.build({"name": "NOTICK", "tick_size": 0, "tick_value": 0})
+        """A zero tick value is not a small risk, it is an unpriceable one, and the
+        only honest answer is to refuse."""
+        instrument = instruments.build({"name": "NOTICK", "trade_tick_size": 0,
+                                        "trade_tick_value": 0})
+        self.assertFalse(instrument.pricing_ok)
         self.assertIsNone(sizing.stop_distance(1.0, instrument, 100.0))
 
 

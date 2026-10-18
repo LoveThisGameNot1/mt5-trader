@@ -57,7 +57,8 @@
       }
     ],
     "max_positions_per_symbol": 1,
-    "treat_stopless_as_full_risk": true
+    "treat_stopless_as_full_risk": true,
+    "max_quote_age_seconds": 900
   },
 
   "journal": {

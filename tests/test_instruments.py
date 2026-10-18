@@ -20,6 +20,38 @@ class Metadata(unittest.TestCase):
         with self.assertRaises(instruments.InstrumentError):
             instruments.build(None)
 
+    def test_the_tick_fields_are_read_under_their_real_mt5_names(self):
+        """trade_tick_size and trade_tick_value_loss, not tick_size and tick_value.
+        Reading a name the terminal does not have yields a zero, and a zero tick
+        value sizes every position at nothing."""
+        instrument = instruments.build(eurusd())
+        self.assertTrue(instrument.tick_size_reported)
+        self.assertAlmostEqual(instrument.tick_size, 0.00001, places=12)
+        self.assertAlmostEqual(instrument.tick_value_loss, 1.0, places=9)
+        self.assertTrue(instrument.pricing_ok)
+
+    def test_the_schema_check_names_a_renamed_field(self):
+        """The fixture below is what the code looked like before this check existed:
+        the fields under names MetaTrader does not use."""
+        wrong = {"name": "RENAMED", "digits": 5, "point": 0.00001,
+                 "tick_size": 0.00001, "tick_value_loss": 1.0,
+                 "contract_size": 100000.0, "volume_min": 0.01, "volume_step": 0.01}
+        report = instruments.check_schema(wrong)
+        self.assertFalse(report["ok"])
+        self.assertIn("trade_tick_size", report["required_missing"])
+        self.assertIn("trade_tick_value_loss", report["required_missing"])
+        self.assertIn("divide by a zero tick value", report["meaning"])
+
+    def test_the_schema_check_passes_a_really_shaped_symbol(self):
+        report = instruments.check_schema(eurusd())
+        self.assertTrue(report["ok"], report["required_missing"])
+        self.assertEqual(report["required_missing"], [])
+        self.assertIn("trade_tick_value", report["present"])
+
+    def test_pricing_is_refused_when_the_tick_value_is_zero(self):
+        instrument = instruments.build(make_symbol("ZERO", trade_tick_value=0))
+        self.assertFalse(instrument.pricing_ok)
+
 
 class VolumeNormalisation(unittest.TestCase):
     def test_valid_sizes_are_min_plus_n_times_step(self):
@@ -55,7 +87,8 @@ class VolumeNormalisation(unittest.TestCase):
 
 class PriceNormalisation(unittest.TestCase):
     def test_rounds_half_away_from_zero_like_normalize_double(self):
-        instrument = instruments.build(make_symbol("X", digits=2, point=0.01, tick_size=0.01))
+        instrument = instruments.build(make_symbol("X", digits=2, point=0.01,
+                                                   trade_tick_size=0.01))
         self.assertAlmostEqual(instrument.normalize_price(1.005), 1.01)
         self.assertAlmostEqual(instrument.normalize_price(1.004), 1.0)
         self.assertAlmostEqual(instrument.normalize_price(2.675), 2.68)

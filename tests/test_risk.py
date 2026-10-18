@@ -252,6 +252,66 @@ class InstrumentChecks(RiskTestCase):
         self.assertIn("spread", self.codes(verdict))
         self.assertIn("12", " ".join(verdict["blocking"]))
 
+    def test_a_market_order_on_a_symbol_with_no_quotes_is_refused_in_plain_words(self):
+        from mt5trader.fixtures import make_symbol
+        self.make(symbols=[make_symbol("NOQUOTES", bid=0, ask=0)])
+        verdict = self.check(symbol="NOQUOTES")
+        self.assertIn("plan", self.codes(verdict))
+        blocking = " ".join(verdict["blocking"])
+        self.assertIn("no live bid or ask", blocking)
+        self.assertIn("pending order", blocking)
+
+    def test_quotes_vanishing_between_plan_and_execution_blocks_before_the_send(self):
+        """A plan made on a live price and executed after the session closed. The
+        plan still normalises, so this is the check that catches it."""
+        from mt5trader.fixtures import make_symbol
+        self.make(symbols=[make_symbol("NOQUOTES", bid=0, ask=0)])
+        verdict = self.check(symbol="NOQUOTES", price=1.08512, risk_percent=None,
+                             volume=0.1, stop=1.08412)
+        self.assertIn("quotes", self.codes(verdict))
+        blocking = " ".join(verdict["blocking"])
+        self.assertIn("no live bid or ask", blocking)
+        self.assertIn("pending order does not need quotes", blocking)
+        self.assertNotIn("None points wide", blocking)
+
+    def test_a_stale_tick_blocks_even_though_a_bid_and_an_ask_exist(self):
+        """A Friday tick still has a bid and an ask and still shows a one-point
+        spread, so on a Sunday the market looks open until the broker refuses the
+        order. Freshness is the check that catches it."""
+        self.make()
+        self.h.fake._tick_time = time.time() - 40 * 3600
+        verdict = self.check()
+        self.assertIn("quote_freshness", self.codes(verdict))
+        blocking = " ".join(verdict["blocking"])
+        self.assertIn("hours old", blocking)
+        self.assertIn("MARKET_CLOSED", blocking)
+
+    def test_a_fresh_tick_passes_the_freshness_check(self):
+        self.make()
+        self.h.fake._tick_time = time.time()
+        self.assertNotIn("quote_freshness", self.codes(self.check()))
+
+    def test_the_freshness_threshold_can_be_tightened(self):
+        self.make(config={"guards": {"max_quote_age_seconds": 1}})
+        self.h.fake._tick_time = time.time() - 5
+        self.assertIn("quote_freshness", self.codes(self.check()))
+
+    def test_the_freshness_threshold_cannot_be_loosened_past_its_ceiling(self):
+        self.make(config={"guards": {"max_quote_age_seconds": 999999}})
+        self.assertEqual(self.h.settings.guards["max_quote_age_seconds"],
+                         risk.HARD_CEILINGS["max_quote_age_seconds"])
+        self.assertTrue(any("max_quote_age_seconds" in n for n in self.h.settings.notes))
+
+    def test_a_pending_order_is_not_checked_for_freshness(self):
+        """It rests until the price arrives, so a closed session is exactly when a
+        breakout order is meant to be placed."""
+        self.make()
+        self.h.fake._tick_time = time.time() - 40 * 3600
+        verdict = self.check(kind="pending", type="buy_stop", price=1.09500,
+                             volume=0.1, stop=None, allow_no_sl=True)
+        self.assertNotIn("quote_freshness", self.codes(verdict))
+        self.assertNotIn("quotes", self.codes(verdict))
+
     def test_a_pending_order_does_not_check_the_spread(self):
         self.make(config={"execution": {"max_spread_points": 1}})
         verdict = self.check(kind="pending", price=1.08000, risk_percent=None,

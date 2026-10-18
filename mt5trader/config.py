@@ -41,6 +41,7 @@ HARD_CEILINGS = {
     "max_lots_per_order": 10.0,
     "max_spread_points": 200,
     "max_slippage_points": 50,
+    "max_quote_age_seconds": 3600,
     "loss_cooldown_seconds": 900,
     "duplicate_window_seconds": 300,
 }
@@ -79,12 +80,12 @@ DEFAULT_CONFIG = {
         "require_tp": False,
         "min_reward_risk": 1.0,
         "min_stop_distance_points": 0,
+        "max_quote_age_seconds": 900,
         "blocked_symbols": [],
         "allowed_sides": ["buy", "sell"],
         "blocked_server_hours": [],
         "news_blackout": [],
         "max_positions_per_symbol": 1,
-        "close_only_before_session_end_minutes": 0,
     },
     "journal": {"dir": "journal"},
 }
@@ -204,6 +205,10 @@ class Settings:
         for key, ceiling in HARD_CEILINGS.items():
             if key in risk:
                 risk[key] = _clamp(risk[key], ceiling, "risk." + key, self.notes)
+        guards = self.config["guards"]
+        for key, ceiling in HARD_CEILINGS.items():
+            if key in guards:
+                guards[key] = _clamp(guards[key], ceiling, "guards." + key, self.notes)
         ex = self.config["execution"]
         for key in ("max_spread_points", "max_slippage_points"):
             ex[key] = _clamp(ex[key], HARD_CEILINGS[key], "execution." + key, self.notes)
