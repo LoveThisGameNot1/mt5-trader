@@ -32,7 +32,8 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from mt5trader.cot import CONTRACTS          # noqa: E402
+from mt5trader import records                # noqa: E402
+from mt5trader.cot import CONTRACTS           # noqa: E402
 
 URL = "https://www.cftc.gov/files/dea/history/deacot{year}.zip"
 
@@ -187,7 +188,7 @@ def main(argv=None):
         "source": sources,
         "source_note": ("CFTC legacy futures-only report, the annual file per year. "
                         "Non-commercial is large speculators, commercial is hedgers."),
-        "fetched": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "fetched": records.naive_utc_now().replace(microsecond=0).isoformat() + "Z",
         "report_date": max(entry["last_week"] for _, entry in out),
         "markets": {key: entry for key, entry in sorted(out)},
     }

@@ -135,18 +135,14 @@ class Clock:
     @property
     def now(self):
         """Server wall clock as a naive datetime."""
-        return datetime.datetime.utcfromtimestamp(time.time() + self.offset)
+        return records.naive_utc_from_epoch(time.time() + self.offset)
 
     @property
     def utc_now(self):
-        return datetime.datetime.utcnow()
+        return records.naive_utc_now()
 
     def to_server(self, moment):
         return moment + datetime.timedelta(seconds=self.offset)
-
-    def server_epoch(self, moment=None):
-        moment = moment or datetime.datetime.utcnow()
-        return time.mktime(moment.timetuple()) + self.offset
 
     def day_start(self, moment=None):
         """Server midnight of the broker's current trading day.
@@ -182,7 +178,7 @@ def deals(bridge, date_from, date_to=None):
     """Deals in a window. Both bounds are given, because a one-sided query makes
     the terminal scan far more history than it needs to."""
     return bridge.call("history_deals_get", date_from, date_to or
-                       datetime.datetime.utcfromtimestamp(time.time() + 86400)) or ()
+                       records.naive_utc_from_epoch(time.time() + 86400)) or ()
 
 
 def deals_for_magic(bridge, magic, date_from, date_to=None):

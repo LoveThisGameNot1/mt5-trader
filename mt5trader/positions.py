@@ -348,7 +348,6 @@ def close(bridge, settings, ticket, volume=None, comment="mt5trader close",
         loss = records.fnum(records.get(position, "sl"), 0.0) or None
         freeze = instrument.check_freeze(loss, stop, current)
 
-    opposite = "sell" if side == "buy" else "buy"
     request = {
         "action": ACTION_DEAL,
         "symbol": symbol,

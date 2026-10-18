@@ -243,6 +243,29 @@ correlation test would have been meaningless in the direction of passing. Each
 symbol now gets its own seeded walk, and `set_rates` overrides one when a test
 needs two series that really do move together.
 
+**The deal window was padded, so it did not mean what it said.** The fake added an
+arbitrary day of slop to both bounds, so a deal just outside the window came back
+as if it were inside, and a report's window could be wrong without any test
+noticing. The bounds are now honoured exactly; the one day of deliberate slop
+belongs to `history.deals`, which asks for it on purpose, and the fake no longer
+adds a second one.
+
+## A shared default is a default that changes
+
+The worst bug in this list was not in a test. `Settings` builds its config with
+`_deep_merge(DEFAULT_CONFIG, file)`, and the original version copied the base with
+`dict(base)`, which is shallow: `out["risk"]` was still the very dict inside
+`DEFAULT_CONFIG`. `_clamp_all` then wrote into it. So the first `Settings` created
+in a process permanently rewrote the module defaults for every `Settings` after
+it, and the visible symptom was limits that were right the first time and wrong
+the second.
+
+It surfaced as eight unrelated risk tests failing while the kernel itself, called
+once in isolation, behaved perfectly. The fix is `copy.deepcopy` in the merge, and
+the guard is three tests: the defaults are unchanged after a clamped Settings is
+built, two Settings do not share nested dicts, and an absurd config file is a
+clamped config file rather than a mutated default.
+
 ## Layout
 
 ```
@@ -269,13 +292,13 @@ mt5trader/
   fixtures.py     instrument types and a stand-in terminal, for tests
 mql5/             CalendarExport.mq5, the calendar service the terminal runs
 tools/            fetch_cot.py, build_sidecar.py, render_docs.py
-tests/            386 tests, offline, no terminal
+tests/            408 tests, offline, no terminal
 ```
 
 ## Testing
 
 ```
-python -m unittest discover -s tests -t .      # 281 tests, about 2 seconds
+python -m unittest discover -s tests -t .      # 408 tests, about 3 seconds
 python -m mt5trader selftest                   # the same guarantees, for a shell
 ```
 
@@ -285,5 +308,6 @@ reconciliation, freeze and drift paths are all exercised without a broker. Four
 instrument types are in there specifically because they break naive code: a
 5-digit forex pair, gold, an index CFD with one digit, a crypto contract, and a
 symbol whose partial closes strand a remainder below the minimum.
+
 
 

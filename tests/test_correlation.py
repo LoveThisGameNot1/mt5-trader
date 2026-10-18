@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from mt5trader import correlation, instruments
+from mt5trader import correlation
 from mt5trader.fixtures import make_position
 from tests import harness
 

@@ -6,8 +6,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mt5trader import instruments, sizing
-from mt5trader.fixtures import (btcusd, make_account, one_lot_minimum, testm, us30,
-                                xauusd)
+from mt5trader.fixtures import (btcusd, one_lot_minimum, testm, us30, xauusd)
 from tests import harness
 
 

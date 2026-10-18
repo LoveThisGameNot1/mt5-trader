@@ -20,7 +20,6 @@ On Windows os.replace over an existing file is atomic, so a crash mid-write
 leaves either the old file or the new one, never a truncated one.
 """
 
-import datetime
 import json
 import os
 import threading
@@ -58,7 +57,7 @@ def read_json(path, default=None):
 def new_id(prefix):
     return "%s-%s-%s" % (
         prefix,
-        datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
+        records.naive_utc_now().strftime("%Y%m%d-%H%M%S"),
         uuid.uuid4().hex[:6],
     )
 
@@ -116,16 +115,20 @@ class Store:
 
     # -- events ------------------------------------------------------------
     def event(self, kind, payload=None, **extra):
+        """Append one line to the journal.
+
+        Timestamps are UTC and carry a Z, like every other timestamp this project
+        writes. A bare local time in an audit trail is ambiguous, and the one thing
+        an audit trail may not be is ambiguous.
+        """
         record = {
-            "ts": datetime.datetime.now().replace(microsecond=0).isoformat(),
+            "ts": records.naive_utc_now().replace(microsecond=0).isoformat() + "Z",
             "kind": kind,
         }
         if payload:
             record.update(records.to_jsonable(payload))
         if extra:
             record.update(records.to_jsonable(extra))
-        if record.get("ts") == "1970-01-01T00:00:00":
-            record["ts"] = datetime.datetime.now().isoformat()
         line = json.dumps(record, ensure_ascii=False)
         with self._lock:
             self.journal_dir.mkdir(parents=True, exist_ok=True)

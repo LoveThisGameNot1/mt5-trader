@@ -7,8 +7,8 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from mt5trader import risk
-from mt5trader.fixtures import btcusd, eurusd, make_account, make_position, make_terminal
+from mt5trader import records, risk
+from mt5trader.fixtures import eurusd, make_account, make_position
 from tests import harness
 
 MAGIC = 770001
@@ -319,12 +319,12 @@ class InstrumentChecks(RiskTestCase):
         self.assertNotIn("spread", self.codes(verdict))
 
     def test_a_blocked_server_hour_blocks(self):
-        now_hour = datetime.datetime.utcnow().hour
+        now_hour = records.naive_utc_now().hour
         self.make(config={"guards": {"blocked_server_hours": [now_hour]}})
         self.assertIn("server_hour", self.codes(self.check()))
 
     def test_a_blackout_window_blocks(self):
-        now = datetime.datetime.utcnow()
+        now = records.naive_utc_now()
         window = {"start": (now - datetime.timedelta(minutes=2)).strftime("%H:%M"),
                   "end": (now + datetime.timedelta(minutes=2)).strftime("%H:%M"),
                   "label": "CPI release"}
@@ -516,3 +516,4 @@ class Reporting(RiskTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

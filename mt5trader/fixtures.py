@@ -19,10 +19,23 @@ a queue of return codes so the retry, rotate-filling and reconciliation paths
 get exercised without a broker.
 """
 
+import calendar
 import copy
 import datetime
 import time
 import zlib
+
+
+def _epoch(value):
+    """Epoch seconds from a bound the caller passed.
+
+    A naive datetime is read as UTC with calendar.timegm. Reading it as the machine's
+    local time would shift the window by the machine's offset, which is the bug this
+    conversion exists to avoid. A number passes straight through.
+    """
+    if isinstance(value, datetime.datetime):
+        return calendar.timegm(value.timetuple())
+    return float(value)
 
 
 def make_symbol(name, **overrides):
@@ -441,18 +454,26 @@ class FakeMt5:
         return tuple(out)
 
     def history_deals_get(self, date_from=None, date_to=None, position=None, ticket=None):
+        """Deals inside the window, and only those.
+
+        The bounds are honoured exactly. An earlier version padded them, which made
+        a deal just outside the window come back as if it were inside, and a test
+        that checks a report's window then passes for the wrong reason. The slop
+        belongs to the caller: ``history.deals`` deliberately asks for a day past
+        now, and the fake should not add a second one of its own.
+
+        Dates are converted with calendar.timegm, never with .timestamp(). A naive
+        datetime's local-time interpretation would shift every window by the
+        machine's offset.
+        """
         out = []
         for deal in self.deals:
             if position is not None and deal.get("position_id") != int(position):
                 continue
-            if date_from is not None:
-                start = date_from.timestamp() if isinstance(date_from, datetime.datetime) else float(date_from)
-                if deal["time"] < start - 86400 * 400:
-                    continue
-            if date_to is not None:
-                end = date_to.timestamp() if isinstance(date_to, datetime.datetime) else float(date_to)
-                if deal["time"] > end + 86400:
-                    continue
+            if date_from is not None and deal["time"] < _epoch(date_from):
+                continue
+            if date_to is not None and deal["time"] > _epoch(date_to):
+                continue
             out.append(copy.deepcopy(deal))
         return tuple(out)
 

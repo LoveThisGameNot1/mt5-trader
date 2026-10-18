@@ -155,6 +155,27 @@ def to_jsonable(value):
     return str(value)
 
 
+def naive_utc_now():
+    """The current UTC time as a naive datetime.
+
+    ``datetime.utcnow()`` is deprecated and slated for removal. The functional
+    reason to care is not tidiness: this server writes a JSON-RPC stream on stdout,
+    and a DeprecationWarning printed there by the interpreter is a corrupted
+    protocol frame as far as the client is concerned.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def naive_utc_from_epoch(epoch):
+    """Epoch seconds as a naive UTC datetime.
+
+    ``datetime.utcfromtimestamp`` is deprecated for the same reason. MT5 epochs
+    already carry the server's wall clock, so this labels them UTC without shifting
+    them, which is what the terminal's own windows show.
+    """
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).replace(tzinfo=None)
+
+
 def iso_time(epoch):
     """MT5 timestamps are epoch seconds that already carry the server's wall
     clock. Rendering them with UTC labelling reproduces exactly what the
@@ -163,7 +184,7 @@ def iso_time(epoch):
     if epoch is None:
         return None
     try:
-        return datetime.datetime.utcfromtimestamp(int(epoch)).isoformat() + "Z"
+        return naive_utc_from_epoch(int(epoch)).isoformat() + "Z"
     except (OverflowError, OSError, ValueError):
         return None
 

@@ -155,8 +155,8 @@ class RiskKernel:
         state = self.store.load()
         cursor = records.inum(state.get("deal_cursor"), 0) or 0
         day_start = clock.day_start().isoformat(sep=" ")
-        from_dt = datetime.datetime.utcfromtimestamp(
-            datetime.datetime.now().timestamp() - 30 * 86400)
+        from_dt = records.naive_utc_from_epoch(
+            datetime.datetime.now(datetime.timezone.utc).timestamp() - 30 * 86400)
         deal_list = history.deals_for_magic(self.bridge, self.settings.magic, from_dt)
         newest = cursor
         losses = 0

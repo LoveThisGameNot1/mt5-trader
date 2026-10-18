@@ -21,6 +21,7 @@ On top of that, any account whose trade mode is REAL is treated as read-only
 unless the process was started with ``MT5_ALLOW_LIVE=1``.
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -120,12 +121,21 @@ def _number(value, fallback=None):
 
 
 def _deep_merge(base, override):
-    out = dict(base)
+    """Merge *override* into *base*, leaving *base* untouched.
+
+    The copy has to be deep, and that is not a detail. ``dict(base)`` is shallow, so
+    ``out["risk"]`` would still be the very dict inside ``DEFAULT_CONFIG``, and
+    ``_clamp_all`` writes into it. One Settings object would then permanently change
+    the defaults for every Settings created afterwards in the same process, and the
+    visible symptom would be limits that are right the first time and wrong the
+    second.
+    """
+    out = copy.deepcopy(base)
     for key, value in (override or {}).items():
         if isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key] = _deep_merge(out[key], value)
         elif value is not None:
-            out[key] = value
+            out[key] = copy.deepcopy(value)
     return out
 
 

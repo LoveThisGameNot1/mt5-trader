@@ -1,3 +1,4 @@
+import calendar
 import datetime
 import pathlib
 import sys
@@ -7,7 +8,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from mt5trader import history
+from mt5trader import history, records
 from mt5trader.fixtures import make_deal
 from tests import harness
 
@@ -131,7 +132,7 @@ class Stats(unittest.TestCase):
 class Clock(unittest.TestCase):
     def test_a_measured_offset_shifts_the_day_key(self):
         clock = history.Clock(offset_seconds=7200, source="test")
-        expected = (datetime.datetime.utcnow() + datetime.timedelta(hours=2)).strftime("%Y-%m-%d")
+        expected = (records.naive_utc_now() + datetime.timedelta(hours=2)).strftime("%Y-%m-%d")
         self.assertEqual(clock.day_key(), expected)
 
     def test_the_day_starts_at_server_midnight(self):
@@ -212,9 +213,59 @@ class EquitySeries(unittest.TestCase):
         ]
         h = harness.build(tmp.name, env=harness.AUTONOMOUS, deals=deals)
         series = history.equity_series(h.bridge,
-                                       datetime.datetime.utcnow() - datetime.timedelta(days=1))
+                                       records.naive_utc_now() - datetime.timedelta(days=1))
         self.assertEqual(series[-1]["cumulative"], 30.0)
+
+
+class DealWindowsAreUtc(unittest.TestCase):
+    """The fake filters deals by a window the kernel hands it as a naive datetime
+    meaning UTC. Converting that with .timestamp() would read it as the machine's
+    local time and shift the window by the offset, so on a machine at UTC+2 a
+    three-day-old deal would fall outside a thirty-day window for no visible
+    reason. These two tests pin the behaviour from both sides.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_a_deal_inside_a_utc_window_is_found(self):
+        now = records.naive_utc_now()
+        stamp = int(calendar.timegm((now - datetime.timedelta(days=3)).timetuple()))
+        h = harness.build(self.tmp.name, env=harness.AUTONOMOUS,
+                          deals=[make_deal(1, "EURUSD", 0.1, 1.085, MAGIC, entry=1,
+                                           profit_value=10.0, when=stamp)])
+        found = history.deals(h.bridge,
+                              records.naive_utc_from_epoch(stamp - 30 * 86400),
+                              records.naive_utc_from_epoch(stamp + 86400))
+        self.assertEqual(len(found), 1)
+
+    def test_a_deal_outside_a_utc_window_is_not_found(self):
+        now = records.naive_utc_now()
+        stamp = int(calendar.timegm((now - datetime.timedelta(days=3)).timetuple()))
+        h = harness.build(self.tmp.name, env=harness.AUTONOMOUS,
+                          deals=[make_deal(1, "EURUSD", 0.1, 1.085, MAGIC, entry=1,
+                                           profit_value=10.0, when=stamp)])
+        found = history.deals(h.bridge,
+                              records.naive_utc_from_epoch(stamp - 30 * 86400),
+                              records.naive_utc_from_epoch(stamp - 86400))
+        self.assertEqual(found, ())
+
+    def test_the_report_for_the_last_day_still_sees_a_deal_from_last_week(self):
+        """The end-to-end version: mt5_history asks for a window, and the window has
+        to mean what the clock says it means."""
+        now = records.naive_utc_now()
+        stamp = int(calendar.timegm((now - datetime.timedelta(days=2)).timetuple()))
+        h = harness.build(self.tmp.name, env=harness.AUTONOMOUS,
+                          deals=[make_deal(1, "EURUSD", 0.1, 1.085, MAGIC, entry=1,
+                                           profit_value=25.0, when=stamp)])
+        found = history.deals(h.bridge, records.naive_utc_now() - datetime.timedelta(days=7))
+        self.assertEqual(len(found), 1)
+        out = history.realized_summary(found)
+        self.assertAlmostEqual(out["realized_net"], 25.0, places=2)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+

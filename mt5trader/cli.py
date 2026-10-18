@@ -11,12 +11,11 @@
 """
 
 import argparse
-import json
 import sys
 
 from . import __version__, records
 from .bridge import Mt5Bridge, Mt5Error
-from .config import HARD_CEILINGS, Settings, load_settings
+from .config import HARD_CEILINGS, Settings
 from .risk import RiskKernel
 from .server import Server
 from .state import Store

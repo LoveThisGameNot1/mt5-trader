@@ -24,11 +24,11 @@ import sys
 import time
 import traceback
 
-from . import __version__, correlation, cot, errors, history, instruments, levels, market
+from . import __version__, correlation, cot, history, instruments, levels
 from . import news, orders, positions, records, sessions
 from .bridge import Mt5Bridge, Mt5Error
 from .config import Settings, load_settings
-from .risk import BLOCK, PASS, RiskKernel
+from .risk import PASS, RiskKernel
 from .state import Store
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -655,7 +655,7 @@ class Server:
             import datetime
             bars = self.bridge.call("copy_rates_range", instrument.symbol, code,
                                     _to_dt(args["from"]),
-                                    _to_dt(args.get("to") or datetime.datetime.utcnow()))
+                                    _to_dt(args.get("to") or records.naive_utc_now()))
         else:
             count = int(args.get("count") or 100)
             count = max(1, min(count, 5000))
@@ -706,7 +706,7 @@ class Server:
     def tool_history(self, args):
         days = min(float(args.get("days") or 1), 365)
         import datetime
-        date_from = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+        date_from = records.naive_utc_now() - datetime.timedelta(days=days)
         if args.get("symbol"):
             instrument, _ = instruments.load(self.bridge, self.settings, args["symbol"])
             symbol = instrument.symbol
@@ -736,7 +736,7 @@ class Server:
     def tool_stats(self, args):
         days = min(float(args.get("days") or 30), 365)
         import datetime
-        date_from = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+        date_from = records.naive_utc_now() - datetime.timedelta(days=days)
         deal_list = history.deals(self.bridge, date_from)
         if args.get("magic_only", True):
             deal_list = [d for d in deal_list
@@ -1227,8 +1227,8 @@ def _to_dt(value):
 
 
 def _now():
-    import datetime
-    return datetime.datetime.now().replace(microsecond=0).isoformat()
+    """A UTC timestamp with a Z, like every other timestamp this project writes."""
+    return records.naive_utc_now().replace(microsecond=0).isoformat() + "Z"
 
 
 TIMEFRAMES = {

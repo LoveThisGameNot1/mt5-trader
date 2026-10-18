@@ -197,7 +197,7 @@ decision must not depend on a website being up.
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .   # 386 tests, offline, ~3s
+python -m unittest discover -s tests -t .   # 408 tests, offline, ~3s
 ```
 
 The suite needs no terminal, no Windows and no MetaTrader5 wheel. `fixtures.py`
@@ -240,5 +240,6 @@ config.example.json
 ```
 
 MIT. Built by [LoveThisGameNot1](https://github.com/LoveThisGameNot1).
+
 
 

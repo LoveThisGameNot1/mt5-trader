@@ -6,7 +6,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from mt5trader import instruments
 from mt5trader.fixtures import (btcusd, eurusd, eurusd_wide_stops, make_symbol,
-                                one_lot_minimum, testm, us30, xauusd)
+                                testm, us30, xauusd)
 
 
 class Metadata(unittest.TestCase):

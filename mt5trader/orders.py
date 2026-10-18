@@ -127,7 +127,7 @@ def build_request(bridge, settings, spec, instrument=None, position=None):
             if not expiration:
                 minutes = int(settings.execution.get("pending_expiry_minutes") or 1440)
                 base = spec.get("_clock")
-                moment = base.now if base is not None else datetime.datetime.utcnow()
+                moment = base.now if base is not None else records.naive_utc_now()
                 request["expiration"] = moment + datetime.timedelta(minutes=minutes)
             elif isinstance(expiration, str):
                 request["expiration"] = datetime.datetime.fromisoformat(expiration)
@@ -230,7 +230,7 @@ def send(bridge, store, spec, instrument, request, settings, clock=None,
         "deviation": spec.get("deviation"),
         "status": "prepared",
         "attempts": [],
-        "created_at": datetime.datetime.now().replace(microsecond=0).isoformat(),
+        "created_at": records.naive_utc_now().replace(microsecond=0).isoformat() + "Z",
         "server_time": (clock.now.replace(microsecond=0).isoformat() if clock else None),
         "sent_epoch": int(time.time()),
     }
@@ -257,7 +257,7 @@ def send(bridge, store, spec, instrument, request, settings, clock=None,
             elif spec.get("kind") == "pending" and attempt > 1:
                 if not request.get("type_time") and settings.execution.get("pending_expiry_minutes"):
                     request["type_time"] = TIME_IN_FORCE["specified"]
-                    base = clock.now if clock else datetime.datetime.utcnow()
+                    base = clock.now if clock else records.naive_utc_now()
                     request["expiration"] = base + datetime.timedelta(
                         minutes=int(settings.execution.get("pending_expiry_minutes") or 1440))
             result = bridge.call("order_send", request)
@@ -292,7 +292,7 @@ def send(bridge, store, spec, instrument, request, settings, clock=None,
 
     store.update_intent(intent_id, status=status, attempts=attempts,
                         result=attempts[-1] if attempts else None,
-                        finished_at=datetime.datetime.now().replace(microsecond=0).isoformat())
+                        finished_at=records.naive_utc_now().replace(microsecond=0).isoformat() + "Z")
     if status == "sent":
         store.event("order_sent", {"intent_id": intent_id, "retcode": final.get("retcode"),
                                    "order": final.get("order"), "deal": final.get("deal"),
@@ -341,7 +341,7 @@ def reconcile(bridge, settings, intent):
     magic = records.inum(intent.get("magic"), settings.magic)
     symbol = intent.get("symbol")
     volume = records.fnum(intent.get("volume"), None)
-    from_dt = datetime.datetime.utcfromtimestamp(sent_epoch - 120)
+    from_dt = records.naive_utc_from_epoch(sent_epoch - 120)
 
     deal_list = history.deals_for_magic(bridge, magic, from_dt)
     matches = []
@@ -408,10 +408,10 @@ def reconcile_all(bridge, store, settings):
         verdict = reconcile(bridge, settings, intent)
         if verdict["status"] in ("executed", "maybe_executed", "placed", "not_executed"):
             store.update_intent(intent["intent_id"], status=verdict["status"],
-                                reconciled_at=datetime.datetime.now().replace(
-                                    microsecond=0).isoformat(),
+                                reconciled_at=records.naive_utc_now().replace(microsecond=0).isoformat() + "Z",
                                 reconcile_reason=verdict["reason"])
             store.event("intent_reconciled", {"intent_id": intent["intent_id"],
                                               "status": verdict["status"]})
         out.append(verdict)
     return out
+

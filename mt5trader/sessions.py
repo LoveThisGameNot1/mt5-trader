@@ -16,8 +16,6 @@ like noise.
 
 from . import market, records
 
-import datetime
-
 # The conventional windows, in UTC. Converted to server hours at call time.
 SESSIONS_UTC = (
     ("Sydney", 21, 6),
@@ -64,7 +62,7 @@ def compute(bridge, symbol, instrument=None, clock=None, days=DEFAULT_DAYS,
     buckets = {hour: {"bars": 0, "range": 0.0, "move": 0.0} for hour in range(24)}
     for row in rows:
         try:
-            moment = datetime.datetime.utcfromtimestamp(row["time"])
+            moment = records.naive_utc_from_epoch(row["time"])
         except (OverflowError, OSError, ValueError):
             continue
         hour = moment.hour
@@ -152,3 +150,4 @@ def compute(bridge, symbol, instrument=None, clock=None, days=DEFAULT_DAYS,
                    "no bars is reported as null rather than as zero: the market was "
                    "shut, which is not the same as quiet."),
     }
+
